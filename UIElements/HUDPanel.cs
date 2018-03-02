@@ -10,23 +10,48 @@ namespace f3
     //
     public class HUDPanel : HUDStandardItem, SceneUIParent, IBoxModelElement
     {
-        public List<SceneUIElement> Children { get; set; }
+        public HUDChildren Children;
 
-        public float Width { get; set; }
-        public float Height { get; set; }
-        public float Padding { get; set; }
+        public float Width {
+            get { return width; }
+            set { if (width != value) { width = value; FUtil.SafeSendEvent(BoundsModifiedEvent, this); } }
+        }
+        float width;
+
+        public float Height {
+            get { return height; }
+            set { if (height != value) { height = value; FUtil.SafeSendEvent(BoundsModifiedEvent, this); } }
+        }
+        float height;
+
+        public float Padding {
+            get { return padding; }
+            set { if (padding != value) { padding = value; FUtil.SafeSendEvent(BoundsModifiedEvent, this); } }
+        }
+        float padding;
 
         public float PaddedWidth { get { return Width - 2*Padding; } }
         public float PaddedHeight { get { return Height - 2*Padding; } }
 
         fGameObject parent;
+        List<IElementLayout> Layouts;
+
+        public BoundsModifiedEventHandler BoundsModifiedEvent;
 
         public HUDPanel()
         {
-            Children = new List<SceneUIElement>();
-            Width = 1;
-            Height = 1;
-            Padding = 0;
+            Children = new HUDChildren(this) {
+                OnChildAdded = (elem, bKeepWorldPosition) => {
+                    elem.SetLayer(this.Layer);
+                    parent.AddChild(elem.RootGameObject, bKeepWorldPosition);
+                },
+                OnChildRemoved = (elem) => {
+                    ;
+                }
+            };
+            width = 1;
+            height = 1;
+            padding = 0;
         }
 
 
@@ -35,6 +60,7 @@ namespace f3
         {
             Width = width + 2 * Padding;
             Height = height + 2 * Padding;
+            FUtil.SafeSendEvent(BoundsModifiedEvent, this);
         }
         public Vector2f ContentSize {
             get { return BoxModel.PaddedSize(this, Padding); }
@@ -51,46 +77,6 @@ namespace f3
         public virtual void Create()
         {
             parent = GameObjectFactory.CreateParentGO(UniqueNames.GetNext("HUDPanel"));
-        }
-
-
-        // [RMS] management of Panel children. Currently we do not use Panel
-        //   directly, so these are not publicly accessible. I don't entirely like this.
-        //   However, C# does not allow us to "hide" a public member in a subclass,
-        //   which means that Panel implementations would directly expose these, when
-        //   in most cases they should not be exposed...
-
-        protected virtual void AddChild(SceneUIElement ui, bool bKeepWorldPosition = true)
-        {
-            if (!Children.Contains(ui)) {
-                Children.Add(ui);
-                ui.Parent = this;
-                ui.SetLayer(this.Layer);
-                parent.AddChild(ui.RootGameObject, bKeepWorldPosition);
-            }
-        }
-        protected virtual void AddChildren(IEnumerable<SceneUIElement> v, bool bKeepWorldPosition = true)
-        {
-            foreach (SceneUIElement ui in v)
-                AddChild(ui, bKeepWorldPosition);
-        }
-
-        protected virtual void RemoveChild(SceneUIElement ui)
-        {
-            if (Children.Contains(ui)) {
-                Children.Remove(ui);
-                ui.Parent = null;
-                ui.RootGameObject.SetParent(null, true);
-
-                // [RMS] should re-parent to cockpit/scene we are part of? currently no reference to do that...
-                //so.RootGameObject.transform.SetParent(parentScene.RootGameObject.transform, true);
-            }
-        }
-
-        protected virtual void RemoveAllChildren()
-        {
-            while (Children.Count > 0)
-                RemoveChild(Children[0]);
         }
 
 
@@ -148,6 +134,25 @@ namespace f3
             foreach (var ui in Children)
                 ui.PreRender();
         }
+
+
+
+        public virtual void AttachLayout(IElementLayout layout)
+        {
+            if (this.Layouts == null)
+                this.Layouts = new List<IElementLayout>();
+            this.Layouts.Add(layout);
+        }
+
+        public virtual void ValidateLayouts()
+        {
+            // [TODO]
+            //if ( this.Layouts != null ) {
+            //    foreach ( var layout in this.Layouts )
+            //        layout.RecomputeLayout()
+            //}
+        }
+
 
 
         override public bool FindRayIntersection(Ray3f ray, out UIRayHit hit)
@@ -222,6 +227,68 @@ namespace f3
 
         #endregion
 
-
     }
+
+
+
+
+    /// <summary>
+    /// This is just a BoxModel wrapper for the Content area of a HUDPanel (ie w/ padding)
+    /// </summary>
+    public class HUDPanelContentBox : IBoxModelElement
+    {
+        public HUDPanel Panel;
+
+        public HUDPanelContentBox(HUDPanel panel) {
+            this.Panel = panel;
+        }
+
+        public Vector2f Size2D
+        {
+            get { return Panel.ContentSize; }
+        }
+
+        public AxisAlignedBox2f Bounds2D
+        {
+            get { return Panel.ContentBounds; }
+        }
+    }
+
+
+
+    /// <summary>
+    /// container provider for content area of HUDPanel
+    /// </summary>
+    public class HUDPanelContainerProvider : IContainerBoundsProvider, IDisposable
+    {
+        HUDPanel panel;
+
+        public HUDPanelContainerProvider(HUDPanel panel)
+        {
+            this.panel = panel;
+            panel.BoundsModifiedEvent += on_element_modified;
+        }
+        public virtual void Dispose()
+        {
+            panel.BoundsModifiedEvent -= on_element_modified;
+        }
+
+        public virtual AxisAlignedBox2f ContainerBounds {
+            get { return panel.ContentBounds; }
+        }
+
+        virtual protected void on_element_modified(object source)
+        {
+            PostOnModified();
+        }
+
+        public virtual void PostOnModified()
+        {
+            FUtil.SafeSendAnyEvent(OnContainerBoundsModified, this);
+        }
+
+        // how to fire??
+        public event BoundsModifiedEventHandler OnContainerBoundsModified;
+    }
+
 }

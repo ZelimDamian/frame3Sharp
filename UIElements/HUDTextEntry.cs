@@ -17,8 +17,8 @@ namespace f3
         public float TextHeight { get; set; }
         public Colorf BackgroundColor { get; set; }
         public Colorf ActiveBackgroundColor { get; set; }
+        public Colorf ActiveTextColor { get; set; }
 
-        public enum HorizontalAlignment { Left, Center, Right }
         public HorizontalAlignment AlignmentHorz { get; set; }
 
         // by default HUDTextEntry will capture text input on click (via Context.RequestTextEntry)
@@ -75,6 +75,7 @@ namespace f3
             BackgroundColor = Colorf.White;
             ActiveBackgroundColor = Colorf.Yellow; ;
             TextColor = Colorf.Black;
+            ActiveTextColor = Colorf.Black;
             text = "(entry)";
             OverrideDefaultInputHandling = false;
         }
@@ -157,7 +158,7 @@ namespace f3
         {
             if (textMesh != null) {
                 textMesh.SetText(Text);
-                textMesh.SetColor(TextColor);
+                textMesh.SetColor(IsEditing ? ActiveTextColor : TextColor);
             }
         }
 
@@ -206,11 +207,13 @@ namespace f3
                     active_entry = entry;
                     FUtil.SafeSendEvent(OnBeginTextEditing, this);
                     bgMesh.SetMaterial(activeBackgroundMaterial);
+                    textMesh.SetColor(ActiveTextColor);
                     start_active_time = FPlatform.RealTime();
                     cursor_position = text.Length;
 
                     entry.OnTextEditingEnded += (s, e) => {
                         bgMesh.SetMaterial(backgroundMaterial);
+                        textMesh.SetColor(TextColor);
                         active_entry = null;
                         FUtil.SafeSendEvent(OnEndTextEditing, this);
                     };

@@ -1,33 +1,34 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 using g3;
 
 namespace f3
 {
-    public abstract class BaseSO : GameObjectSet, TransformableSO
+    public abstract class BaseSO : GameObjectSet, SceneObject, InputBehaviorSource
     {
         protected FScene parentScene;
         protected SOParent parent;
         protected string uuid;
 
         SOMaterial sceneMaterial;
-        Material displaySceneMaterial;
+        fMaterial displaySceneMaterial;
 
-        Material displayMaterial;
-        List<Material> vMaterialStack;
+        fMaterial displayMaterial;
+        List<fMaterial> vMaterialStack;
 
         int _timestamp = 0;
         protected void increment_timestamp() { _timestamp++; }
+
+        protected InputBehaviorSet inputBehaviours;
 
         public BaseSO()
         {
             uuid = System.Guid.NewGuid().ToString();
             displayMaterial = null;
-            vMaterialStack = new List<Material>();
+            vMaterialStack = new List<fMaterial>();
+            inputBehaviours = new InputBehaviorSet();
         }
-
 
         //
         // SceneObject functions that subclass must implement
@@ -61,6 +62,14 @@ namespace f3
         }
 
 
+        virtual public void Connect(bool bRestore)
+        {
+        }
+        virtual public void Disconnect(bool bDestroying)
+        {
+        }
+
+
         virtual public bool IsTemporary {
             get { return false; }
         }
@@ -88,7 +97,7 @@ namespace f3
         }
 
 
-        virtual protected void set_material_internal(Material m)
+        virtual protected void set_material_internal(fMaterial m)
         {
             SetAllGOMaterials(m);
         }
@@ -96,7 +105,7 @@ namespace f3
 
         virtual public void AssignSOMaterial(SOMaterial m) {
             sceneMaterial = m;
-            displaySceneMaterial = MaterialUtil.ToUnityMaterial(m);
+            displaySceneMaterial = MaterialUtil.ToMaterialf(m);
             if (vMaterialStack.Count > 0) {
                 // material 0 is always our base material, higher levels of stack are
                 // temp materials that will be popped eventually
@@ -120,7 +129,7 @@ namespace f3
 
         virtual public void PopOverrideMaterial() {
             if (vMaterialStack.Count > 0) {
-                Material m = vMaterialStack.Last();
+                fMaterial m = vMaterialStack.Last();
                 vMaterialStack.RemoveAt(vMaterialStack.Count - 1);
                 displayMaterial = m;
                 set_material_internal(displayMaterial);
@@ -139,6 +148,12 @@ namespace f3
 
         virtual public void DisableShadows() {
             throw new NotImplementedException("BaseSO.DisableShadows: must be implemented by subclasses");
+        }
+
+        virtual public void SetLayer(int nLayer)
+        {
+            RootGameObject.SetLayer(nLayer);
+            this.SetAllGOLayer(nLayer);
         }
 
         public virtual void PreRender() {
@@ -204,6 +219,19 @@ namespace f3
 
 
 
+        /*
+         *  InputBehaviour bits
+         */
+        public virtual InputBehaviorSet InputBehaviors {
+            get { return inputBehaviours; }
+        }
+
+        protected virtual void initialize_behaviors()
+        {
+        }
+
+
+
         //
         // transform utility functions
         //   [TODO] use f3 code to do this, rather than unity xform functions!
@@ -217,6 +245,15 @@ namespace f3
             return vL;
         }
 
+
+
+        // Need to be able to set UUID during restore. But don't use this. really.
+        public void __set_uuid(string new_uuid, string magic_key)
+        {
+            if (magic_key != "0xDEADBEEF")
+                throw new Exception("BaseSO.__set_uuid: are you sure you should be calling this function?");
+            uuid = new_uuid;
+        }
 
     }
 }

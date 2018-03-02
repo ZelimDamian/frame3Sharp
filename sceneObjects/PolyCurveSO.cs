@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using g3;
+
+// [RMS] still need this for LineRenderer
 using UnityEngine;
 
 namespace f3
@@ -12,18 +14,36 @@ namespace f3
 
     public class PolyCurveSO : BaseSO, DCurve3Source
     {
+        /// <summary>
+        /// To make it easier to click on a PolyCurveSO, set this to a larger
+        /// multiplier. Can override per-SO with HitWidthMultiplier param
+        /// </summary>
+        public static float DefaultHitWidthMultiplier = 1.0f;
+
+
         protected fGameObject root;
 
         protected DCurve3 curve;
         public DCurve3 Curve
         {
             get { return curve; }
-            set { curve = value; invalidate_geometry(); }
+            set { curve = value; on_set_curve(); }
         }
         int curve_timestamp = -1;
-        protected void invalidate_geometry() {
+        protected virtual void on_set_curve() {
             curve_timestamp = -1;
         }
+
+
+        /// <summary>
+        /// scale width of curve for hit-testing. uses DefaultHitWidthMultiplier until you set a custom value.
+        /// </summary>
+        public float HitWidthMultiplier {
+            get { return (hit_width_multiplier == -1) ? DefaultHitWidthMultiplier : hit_width_multiplier; }
+            set { hit_width_multiplier = MathUtil.Clamp(value, 0.001f, float.MaxValue); }
+        }
+        float hit_width_multiplier = -1;
+
 
         float visibleWidth;
         AxisAlignedBox3d localBounds;
@@ -61,16 +81,16 @@ namespace f3
             return copy;
         }
 
-        virtual protected void Create_internal(Material useMaterial)
+        virtual protected void Create_internal(fMaterial useMaterial)
         {
             // this is for children to subclass
         }
 
-        public PolyCurveSO Create(SOMaterial defaultMaterial)
+        public virtual PolyCurveSO Create(SOMaterial defaultMaterial)
         {
             if (curve == null) {
                 LineGenerator gen = new LineGenerator() {
-                    Start = Vector3.zero, End = 10.0f * Vector3.up, StepSize = 0.1f
+                    Start = Vector3f.Zero, End = 10.0f * Vector3f.AxisY, StepSize = 0.1f
                 };
                 gen.Generate();
                 curve = new DCurve3();
@@ -87,7 +107,7 @@ namespace f3
             }
 
             AssignSOMaterial(defaultMaterial);       // need to do this to setup BaseSO material stack
-            Material useMaterial = CurrentMaterial;
+            fMaterial useMaterial = CurrentMaterial;
             Create_internal(useMaterial);
 
             UpdateGeometry();
@@ -98,7 +118,7 @@ namespace f3
         }
 
 
-        override protected void set_material_internal(Material m)
+        override protected void set_material_internal(fMaterial m)
         {
             base.set_material_internal(m);
 
@@ -195,30 +215,36 @@ namespace f3
         }
 
 
-        override public bool FindRayIntersection(Ray3f ray, out SORayHit hit)
+        override public bool FindRayIntersection(Ray3f worldRay, out SORayHit hit)
         {
             hit = null;
 
-            Ray sceneRay = GetScene().ToSceneRay(ray);
-            Frame3f frameL = GetLocalFrame(CoordSpace.ObjectCoords);
-            Ray localRay = frameL.ToFrame(sceneRay);
+            // project world ray into local coords
+            FScene scene = GetScene();
+            Ray3f sceneRay = scene.ToSceneRay(worldRay);
+            Ray3f localRay = SceneTransforms.SceneToObject(this, sceneRay);
 
-            float sceneWidth = GetScene().ToSceneDimension(visibleWidth);
+            // also need width in local coords
+            float sceneWidth = scene.ToSceneDimension(visibleWidth);
+            float localWidth = SceneTransforms.SceneToObject(this, sceneWidth) * HitWidthMultiplier;
 
+            // bounding-box hit test (would be nice to do w/o object allocation...)
             AxisAlignedBox3d hitBox = localBounds;
-            hitBox.Expand(sceneWidth * 0.5f);
-            Bounds hitBounds = new Bounds((Vector3)hitBox.Center, (Vector3)hitBox.Diagonal);
-            if ( hitBounds.IntersectRay(localRay) == false)
+            hitBox.Expand(localWidth);
+            IntrRay3AxisAlignedBox3 box_test = new IntrRay3AxisAlignedBox3(localRay, hitBox);
+            if (box_test.Find() == false)
                 return false;
 
+            // raycast against curve (todo: spatial data structure for this? like 2D polycurve bbox tree?)
             double rayHitT;
-            //if (CurveUtils.FindClosestRayIntersection(curve, sceneWidth * 0.5f, localRay, out rayHitT)) {
-            if (CurveUtils.FindClosestRayIntersection(curve, sceneWidth, localRay, out rayHitT)) {
+            if (CurveUtils.FindClosestRayIntersection(curve, localWidth, localRay, out rayHitT)) {
                 hit = new SORayHit();
-                hit.fHitDist = (float)rayHitT;
-                hit.hitPos = localRay.GetPoint(hit.fHitDist);
-                hit.hitPos = GetScene().ToWorldP(frameL.FromFrameP(hit.hitPos));
-                hit.hitNormal = Vector3.zero;
+                // transform local hit point back into world coords
+                Vector3f rayPos = localRay.PointAt((float)rayHitT);
+                Vector3f scenePos = SceneTransforms.ObjectToSceneP(this, rayPos);
+                hit.hitPos = SceneTransforms.SceneToWorldP(scene, scenePos);
+                hit.fHitDist = worldRay.Project(hit.hitPos);
+                hit.hitNormal = Vector3f.Zero;
                 hit.hitGO = root;
                 hit.hitSO = this;
                 return true;

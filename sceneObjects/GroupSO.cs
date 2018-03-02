@@ -5,12 +5,21 @@ using g3;
 
 namespace f3
 {
-    public class GroupSO : TransformableSO, SOCollection, SOParent
+    /// <summary>
+    /// GroupSO enables hierarchies of Scene Objects. It has no geometry
+    /// itself, but SOs can be added as children, and then transforms to
+    /// the Group apply hierarchically to the children. 
+    /// 
+    /// Note that this adds lots of complications. Generally using Groups
+    /// is not as well-tested as a flat scene of objects. So if you have weird
+    /// bugs, try taking the objects out of the Group and see if it still happens!
+    /// </summary>
+    public class GroupSO : SceneObject, SOCollection, SOParent
     {
         fGameObject parentGO;
         SOParent parent;
         protected string uuid;
-        List<TransformableSO> vChildren;
+        List<SceneObject> vChildren;
 
         FScene parentScene;
         bool defer_origin_update;
@@ -33,10 +42,30 @@ namespace f3
         public SelectionModes SelectionMode = SelectionModes.SelectGroup;
 
 
+        /// <summary>
+        /// The GroupSO has its own frame and scaling. By default, when we add a child
+        /// to the Group, we recompute a shared origin point and shift all children
+        /// so that they keep their current positions.
+        /// </summary>
+        public bool EnableSharedOrigin {
+            get { return enable_shared_origin; }
+            set {
+                if (enable_shared_origin != value) {
+                    enable_shared_origin = value;
+                    if (enable_shared_origin == true)
+                        update_shared_origin();
+                }
+            }
+        }
+        bool enable_shared_origin = true;
+
+
+
+
         public GroupSO()
         {
             uuid = System.Guid.NewGuid().ToString();
-            vChildren = new List<TransformableSO>();
+            vChildren = new List<SceneObject>();
             defer_origin_update = false;
         }
         ~GroupSO()
@@ -52,7 +81,7 @@ namespace f3
         }
 
 
-        public void AddChild(TransformableSO so, bool bMaintainOrigin = false)
+        public void AddChild(SceneObject so, bool bMaintainOrigin = false)
         {
             Util.gDevAssert(so != this);
             if (!vChildren.Contains(so)) {
@@ -68,17 +97,17 @@ namespace f3
                 //so.OnTransformModified += childTransformModified;
             }
         }
-        public void AddChildren(IEnumerable<TransformableSO> v, bool bMaintainOrigin = false)
+        public void AddChildren(IEnumerable<SceneObject> v, bool bMaintainOrigin = false)
         {
             defer_origin_update = true;
-            foreach (TransformableSO so in v)
+            foreach (SceneObject so in v)
                 AddChild(so);
             defer_origin_update = false;
             if ( ! bMaintainOrigin )
                 update_shared_origin();
         }
 
-        public void RemoveChild(TransformableSO so, bool bMaintainOrigin = false)
+        public void RemoveChild(SceneObject so, bool bMaintainOrigin = false)
         {
             if ( vChildren.Contains(so) ) {
                 //so.OnTransformModified -= childTransformModified;
@@ -100,8 +129,16 @@ namespace f3
         }
 
 
+        /// <summary>
+        /// TODO: this is a terrible way to implement this. Each time we reparent
+        /// an SO it accumulates a little bit of numerical drift, because of the
+        /// rotation transformations applied to it. The most immediate way this 
+        /// shows up as a problem is that the localScale can drift away from One!!
+        /// </summary>
         void update_shared_origin()
         {
+            if (enable_shared_origin == false)
+                return;
             if (defer_origin_update)
                 return;
 
@@ -111,14 +148,14 @@ namespace f3
             }
 
             Vector3f origin = Vector3f.Zero;
-            foreach (TransformableSO so in vChildren) {
+            foreach (SceneObject so in vChildren) {
                 origin += so.GetLocalFrame(CoordSpace.SceneCoords).Origin;
                 // remove from any existing parent
                 so.GetScene().ReparentSceneObject(so);
             }
             origin *= 1.0f / (float)vChildren.Count;
             SetLocalFrame(new Frame3f(origin), CoordSpace.SceneCoords);
-            foreach (TransformableSO so in vChildren) {
+            foreach (SceneObject so in vChildren) {
                 so.GetScene().AddSceneObjectToParentSO(so, this);
             }
         }
@@ -167,6 +204,18 @@ namespace f3
                         return false;
                 return true;
             }
+        }
+
+
+        virtual public void Connect(bool bRestore)
+        {
+            foreach (var so in vChildren)
+                so.Connect(bRestore);
+        }
+        virtual public void Disconnect(bool bDestroying)
+        {
+            foreach (var so in vChildren)
+                so.Disconnect(bDestroying);
         }
 
         // not really sure what to do here...
@@ -235,7 +284,7 @@ namespace f3
             return UnityUtil.GetBoundingBox(RootGameObject);
         }
         virtual public AxisAlignedBox3f GetLocalBoundingBox() {
-            return SceneUtil.GetLocalBoundingBox(vChildren.Cast<SceneObject>());
+            return SceneUtil.GetLocalBoundingBox(vChildren);
 
         }
 
@@ -253,7 +302,7 @@ namespace f3
 
 
         //
-        // TransformableSceneObject impl
+        // SceneObject impl
         //
 
         public event TransformChangedEventHandler OnTransformModified;
@@ -293,7 +342,19 @@ namespace f3
         //
         virtual public IEnumerable<SceneObject> GetChildren()
         {
-            return vChildren.Cast<SceneObject>();
+            return vChildren;
         }
+
+
+
+        // Need to be able to set UUID during restore. But don't use this. really.
+        public void __set_uuid(string new_uuid, string magic_key)
+        {
+            if (magic_key != "0xDEADBEEF")
+                throw new Exception("BaseSO.__set_uuid: are you sure you should be calling this function?");
+            uuid = new_uuid;
+        }
+
+
     }
 }

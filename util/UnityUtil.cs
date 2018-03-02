@@ -481,8 +481,12 @@ namespace f3
 
 
 
-        public static Mesh DMeshToUnityMesh(DMesh3 m, bool bSwapLeftRight)
+        public static fMesh DMeshToUnityMesh(DMesh3 m, bool bSwapLeftRight)
         {
+            if (bSwapLeftRight)
+                throw new Exception("[RMSNOTE] I think this conversion is wrong, see MeshTransforms.SwapLeftRight. Just want to know if this code is ever hit.");
+
+
             if (m.VertexCount > 65000 || m.TriangleCount > 65000) {
                 Debug.Log("[UnityUtil.DMeshToUnityMesh] attempted to import object larger than 65000 verts/tris, not supported by Unity!");
                 return null;
@@ -516,7 +520,7 @@ namespace f3
             if (m.HasVertexNormals == false)
                 unityMesh.RecalculateNormals();
 
-            return unityMesh;
+            return new fMesh(unityMesh);
         }
 
 
@@ -524,8 +528,11 @@ namespace f3
 
 
 
-        public static SimpleMesh UnityMeshToSimpleMesh(UnityEngine.Mesh mesh, bool bSwapLeftright)
+        public static SimpleMesh UnityMeshToSimpleMesh(UnityEngine.Mesh mesh, bool bSwapLeftRight)
         {
+            if (bSwapLeftRight)
+                throw new Exception("[RMSNOTE] I think this conversion is wrong, see MeshTransforms.SwapLeftRight. Just want to know if this code is ever hit.");
+
             SimpleMesh smesh = new SimpleMesh();
 
             Vector3[] vertices = mesh.vertices;
@@ -544,7 +551,7 @@ namespace f3
 
             for ( int i = 0; i < mesh.vertexCount; ++i ) {
                 Vector3d v = vertices[i];
-                if ( bSwapLeftright ) {
+                if (bSwapLeftRight) {
                     v.x = -v.x;
                     v.z = -v.z;
                 }
@@ -552,7 +559,7 @@ namespace f3
                 if ( bNormals ) {
                     vInfo.bHaveN = true;
                     vInfo.n = normals[i];
-                    if ( bSwapLeftright ) {
+                    if (bSwapLeftRight) {
                         vInfo.n.x = -vInfo.n.x;
                         vInfo.n.z = -vInfo.n.z;
                     }
@@ -584,8 +591,11 @@ namespace f3
 
 
 
-        public static DMesh3 UnityMeshToDMesh(Mesh mesh, bool bSwapLeftright)
+        public static DMesh3 UnityMeshToDMesh(Mesh mesh, bool bSwapLeftRight)
         {
+            if (bSwapLeftRight)
+                throw new Exception("[RMSNOTE] I think this conversion is wrong, see MeshTransforms.SwapLeftRight. Just want to know if this code is ever hit.");
+
             Vector3[] vertices = mesh.vertices;
             Vector3[] normals = mesh.normals;
             Color32[] colors32 = mesh.colors32;
@@ -601,7 +611,7 @@ namespace f3
 
             for ( int i = 0; i < mesh.vertexCount; ++i ) {
                 Vector3d v = vertices[i];
-                if ( bSwapLeftright ) {
+                if (bSwapLeftRight) {
                     v.x = -v.x;
                     v.z = -v.z;
                 }
@@ -609,7 +619,7 @@ namespace f3
                 if ( bNormals ) {
                     vInfo.bHaveN = true;
                     vInfo.n = normals[i];
-                    if ( bSwapLeftright ) {
+                    if (bSwapLeftRight) {
                         vInfo.n.x = -vInfo.n.x;
                         vInfo.n.z = -vInfo.n.z;
                     }
@@ -740,6 +750,40 @@ namespace f3
             } catch {
                 return false;
             }
+        }
+
+
+
+
+		/// <summary>
+		/// Find first instance of GameObject by name, including inactive objects (!)
+		/// </summary>
+		public static GameObject FindGameObjectByName(string sName) {
+			GameObject go = GameObject.Find(sName);
+			if (go != null)
+				return go;
+
+			List<GameObject> rootObjects = new List<GameObject>();
+			var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+			scene.GetRootGameObjects(rootObjects);
+
+			// iterate root objects and do something
+			for (int i = 0; i < rootObjects.Count; ++i) {
+				if (rootObjects[i].name == sName)
+					return rootObjects[i];
+
+				GameObject child = rootObjects[i].FindChildByName(sName, true);
+				if (child != null)
+					return child;
+			}
+			return null;
+		}
+
+
+        public static GameObject FindChildByName(GameObject parent, string sName)
+        {
+            GameObject child = parent.FindChildByName(sName, true);
+            return child;
         }
 
 

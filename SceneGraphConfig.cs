@@ -40,9 +40,13 @@ namespace f3
             ActiveDoubleClickDelay = MouseDoubleClickDelay;
         }
 
-		// assumption is that layer with this name has been created in the Editor, because we 
-		// cannot create layers in code. We will use this layer to draw overlay 3D objects (eg 3D widgets, etc)
-		public static string WidgetOverlayLayerName {
+        public static string GeometryLayerName {
+            get { return "Default"; }
+        }
+
+        // assumption is that layer with this name has been created in the Editor, because we 
+        // cannot create layers in code. We will use this layer to draw overlay 3D objects (eg 3D widgets, etc)
+        public static string WidgetOverlayLayerName {
 			get { return "3DWidgetOverlay"; }
 		}
 
@@ -71,10 +75,9 @@ namespace f3
         // details on render queue #'s: https://docs.unity3d.com/Manual/SL-SubShaderTags.html
         //   (An alternative is to put it in a separate Layer / Sorting Layer, but this is quite heavy and
         //    we are trying to reserve that for major different layers, because there is no z-testing between them)
-        public static int TextRendererQueue
-        {
-            get { return 3100; }
-        }
+        // This is the default 'Transparent' renderQueue in Unity, so text will be z-ordered same as opaque elements
+        public static int TextRendererQueue = 3000;
+
 
         public static string DefaultStandardMaterialPath
         {
@@ -103,6 +106,10 @@ namespace f3
         {
             get { return "StandardMaterials/drop_shadow_mat"; }
         }
+        public static string DefaultDepthWriteOnlyMaterialPath {
+            get { return "StandardMaterials/depth_write_only"; }
+        }
+
 
         public static string LastFileOpenPath
         {
@@ -157,6 +164,16 @@ namespace f3
             get { return 0.4f; }
         }
         public static float ActiveDoubleClickDelay { get; set; }
+
+
+
+        public static void ConfigureForVR() {
+            // bump up text render queue. This means *all* text will be drawn on top of UI elements.
+            TextRendererQueue = 3100;
+        }
+
+
+
 
         public static void RestorePreferences()
         {

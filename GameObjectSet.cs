@@ -96,8 +96,10 @@ namespace f3
 
 			vObjects.Add (go);
 
-            parent.AddChild(go);
-            go.SetLayer(parent.GetLayer());
+            if (parent != null) {
+                parent.AddChild(go);
+                go.SetLayer(parent.GetLayer());
+            }
 
             return go;
 		}
@@ -148,6 +150,13 @@ namespace f3
         {
             foreach (var go in vObjects)
                 go.SetAlphaMultiply(fT);
+        }
+
+
+        public virtual void SetAllGOLayer(int nLayer)
+        {
+            foreach (var go in vObjects)
+                go.SetLayer(nLayer);
         }
 
 

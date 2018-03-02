@@ -11,7 +11,7 @@ namespace f3
     /// Quirks:
     ///   - automatically uses fade in/out transitions on Add/Remove
     /// </summary>
-    public class PinnedBoxesLayout : ILayout
+    public class PinnedBoxesLayout : ICockpitLayout
     {
         public Cockpit Cockpit;
         public PinnedBoxesLayoutSolver Solver;
@@ -38,6 +38,10 @@ namespace f3
         }
 
 
+        virtual public Cockpit Parent
+        {
+            get { return Cockpit; }
+        }
 
         // in VR layouts we were returning 1 here...??
         virtual public float UIScaleFactor
@@ -160,6 +164,16 @@ namespace f3
                 pinTargetF = LayoutUtil.BoxPointF(Solver.Container, BoxPosition.Center);
 
             Solver.AddLayoutItem(element, pinSourceF, pinTargetF, this.StandardDepth + options.DepthShift);
+
+            // if we want to shift result in its layout frame, do that via a post-transform
+            if (options.FrameAxesShift != Vector3f.Zero) {
+                Solver.AddPostTransform(element, (e) => {
+                    Frame3f f = (e as IElementFrame).GetObjectFrame();
+                    f.Translate(options.FrameAxesShift.x * f.X + options.FrameAxesShift.y * f.Y + options.FrameAxesShift.z * f.Z);
+                    (e as IElementFrame).SetObjectFrame(f);
+                });
+            }
+                
 
             // auto-show
             if ( (options.Flags & LayoutFlags.AnimatedShow) != 0 )

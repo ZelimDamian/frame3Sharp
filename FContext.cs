@@ -55,6 +55,8 @@ namespace f3 {
         ActionSet nextFrameActions;             // actions that will be run in the next frame, before
                                                 // UI event handling, prerender(), etc
 
+        ActionSet everyFrameActions;            // actions that will be run every frame until removed
+
 
         public TransformManager TransformManager {
             get { return this.transformManager; }
@@ -144,6 +146,7 @@ namespace f3 {
             InputExtension.Get.Start();
 
             nextFrameActions = new ActionSet();
+            everyFrameActions = new ActionSet();
 
             // intialize camera stuff
             camTracker = new CameraTracking();
@@ -152,6 +155,8 @@ namespace f3 {
             GetScene();
             if (options.SceneInitializer != null)
                 options.SceneInitializer.Initialize(GetScene());
+            Scene.SelectionChangedEvent += OnSceneSelectionChanged;
+
 
             if (options.DefaultGizmoBuilder != null)
                 transformManager = new TransformManager(options.DefaultGizmoBuilder);
@@ -207,6 +212,9 @@ namespace f3 {
         //  (should this be exposed somehow?)
         InputState lastInputState;
 
+        // we use this as a guard to prevent calling things that would cancel current capture
+        bool inCapturingObjectCall = false;
+
         // Update is called once per frame
         public void Update() {
 
@@ -214,8 +222,13 @@ namespace f3 {
 
             FPlatform.IncrementFrameCounter();
 
-            if (FPlatform.IsWindowResized())
+            if (FPlatform.IsWindowResized()) {
+                ActiveCockpit.OnWindowResized();
+                // need to tell other cockpits about this...
+                foreach (Cockpit c in cockpitStack)
+                    c.OnWindowResized();
                 FUtil.SafeSendAnyEvent(OnWindowResized);
+            }
 
             // update our wrappers around various different Input modes
             InputExtension.Get.Update();
@@ -224,20 +237,20 @@ namespace f3 {
             if (options.EnableCockpit) 
                 ActiveCockpit.Update();
 
-            // hardcoded Q key quits app
-            if (Input.GetKeyUp(KeyCode.Q)) {
-                Cursor.lockState = CursorLockMode.None;
-                GlobalControl.Quit();
-            }
-
             // run per-frame actions
-            Action execActions = null;
+            Action runAllOnceActions = null;
             lock (nextFrameActions) {
-                execActions = nextFrameActions.GetRunnable();
+                runAllOnceActions = nextFrameActions.GetRunnable();
                 nextFrameActions.Clear();
             }
-            if ( execActions != null )
-                execActions();
+            if ( runAllOnceActions != null )
+                runAllOnceActions();
+            Action runAllEveryFrameActions = null;
+            lock (everyFrameActions) {
+                runAllEveryFrameActions = everyFrameActions.GetRunnable();
+            }
+            if (runAllEveryFrameActions != null)
+                runAllEveryFrameActions();
 
 
             // can either use spacecontrols or mouse, but not both at same time
@@ -291,7 +304,14 @@ namespace f3 {
 
             // update left-capture
             if (captureLeft != null) {
-                Capture cap = captureLeft.element.UpdateCapture(input, captureLeft.data);
+                inCapturingObjectCall = true;
+                Capture cap = Capture.End;
+                try {
+                    cap = captureLeft.element.UpdateCapture(input, captureLeft.data);
+                }catch ( Exception e ) {
+                    DebugUtil.Log(2, "FContext.HandleInput_SpaceControllers: exception in left UpdateCapture! " + e.Message);
+                }
+                inCapturingObjectCall = false;
                 if (cap.state == CaptureState.Continue) {
                     // (carry on)
                 } else if (cap.state == CaptureState.End) {
@@ -305,7 +325,14 @@ namespace f3 {
             // update right-capture
             // if we are doing a both-capture, we only want to send update once
             if ( captureRight != null && captureRight != captureLeft ) {
-                Capture cap = captureRight.element.UpdateCapture(input, captureRight.data);
+                inCapturingObjectCall = true;
+                Capture cap = Capture.End;
+                try {
+                    cap = captureRight.element.UpdateCapture(input, captureRight.data);
+                } catch (Exception e) {
+                    DebugUtil.Log(2, "FContext.HandleInput_SpaceControllers: exception in right UpdateCapture! " + e.Message);
+                }
+                inCapturingObjectCall = false;
                 if (cap.state == CaptureState.Continue) {
                     // (carry on)
                 } else if (cap.state == CaptureState.End) {
@@ -407,6 +434,13 @@ namespace f3 {
             input.Initialize_TouchInput(this);
             lastInputState = input;
 
+            // [RMS] not sure if this is 100% correct thing to do. We need to allow Platform UI
+            // layer (eg like Unity ui) to consume mouse events before we see them. However this
+            // only applies if they are "on top". It is a bit tricky...
+            if (FPlatformUI.IsConsumingMouseInput()) {
+                return;
+            }
+
             // run override behaviors
             overrideBehaviors.SendOverrideInputs(input);
 
@@ -414,7 +448,14 @@ namespace f3 {
 
             // update left-capture
             if (captureTouch != null) {
-                Capture cap = captureTouch.element.UpdateCapture(input, captureTouch.data);
+                inCapturingObjectCall = true;
+                Capture cap = Capture.End;
+                try {
+                    cap = captureTouch.element.UpdateCapture(input, captureTouch.data);
+                } catch (Exception e) {
+                    DebugUtil.Log(2, "FContext.HandleInput_Touch: exception in UpdateCapture! " + e.Message);
+                }
+                inCapturingObjectCall = false;
                 if (cap.state == CaptureState.Continue) {
                     // (carry on)
                 } else if (cap.state == CaptureState.End) {
@@ -481,6 +522,15 @@ namespace f3 {
             input.Initialize_MouseGamepad(this);
             lastInputState = input;
 
+
+            // [RMS] not sure if this is 100% correct thing to do. We need to allow Platform UI
+            // layer (eg like Unity ui) to consume mouse events before we see them. However this
+            // only applies if they are "on top". It is a bit tricky...
+            if ( FPlatformUI.IsConsumingMouseInput()) { 
+                return;
+            }
+
+
             CameraInteractionState eCamState = (MouseCameraController != null) 
                 ? MouseCameraController.CheckCameraControls(input) : CameraInteractionState.Ignore;
             if (eCamState == CameraInteractionState.BeginCameraAction) {
@@ -503,7 +553,16 @@ namespace f3 {
                 input.MouseGamepadCaptureActive = (captureMouse != null);
 
                 if (InCaptureMouse) {
-                    Capture cap = captureMouse.element.UpdateCapture(input, captureMouse.data);
+                    inCapturingObjectCall = true;
+                    Capture cap = Capture.End;
+                    try {
+                        cap = captureMouse.element.UpdateCapture(input, captureMouse.data);
+                    } catch (Exception e) {
+                        DebugUtil.Log(2, "FContext.HandleInput_MouseOrGamepad: exception in UpdateCapture! " + e.Message);
+                        if (FPlatform.InUnityEditor())
+                            throw;
+                    }
+                    inCapturingObjectCall = false;
                     if (cap.state == CaptureState.Continue) {
                         // (carry on)
                     } else if (cap.state == CaptureState.End) {
@@ -574,22 +633,45 @@ namespace f3 {
         void TerminateCaptures(InputState input)
         {
             if ( captureMouse != null ) {
-                captureMouse.element.ForceEndCapture(lastInputState, captureMouse.data);
+                captureMouse.element.ForceEndCapture(input, captureMouse.data);
                 captureMouse = null;
             }
             if ( captureTouch != null ) {
-                captureTouch.element.ForceEndCapture(lastInputState, captureTouch.data);
+                captureTouch.element.ForceEndCapture(input, captureTouch.data);
                 captureTouch = null;
             }
             if ( captureLeft != null ) {
-                captureLeft.element.ForceEndCapture(lastInputState, captureLeft.data);
+                captureLeft.element.ForceEndCapture(input, captureLeft.data);
                 captureLeft = null;
             }
             if ( captureRight != null ) {
-                captureRight.element.ForceEndCapture(lastInputState, captureRight.data);
+                captureRight.element.ForceEndCapture(input, captureRight.data);
                 captureRight = null;
             }
         }
+
+        void TerminateIfCapturing(IEnumerable<InputBehavior> behaviors, InputState input)
+        {
+            foreach ( InputBehavior b in behaviors ) {
+                if ( captureMouse != null && captureMouse.element == b) {
+                    captureMouse.element.ForceEndCapture(lastInputState, captureMouse.data);
+                    captureMouse = null;
+                }
+                if (captureTouch != null && captureTouch.element == b) {
+                    captureTouch.element.ForceEndCapture(lastInputState, captureTouch.data);
+                    captureTouch = null;
+                }
+                if (captureLeft != null && captureLeft.element == b) {
+                    captureLeft.element.ForceEndCapture(lastInputState, captureLeft.data);
+                    captureLeft = null;
+                }
+                if (captureRight != null && captureRight.element == b) {
+                    captureRight.element.ForceEndCapture(lastInputState, captureRight.data);
+                    captureRight = null;
+                }
+            }
+        }
+
 
 
         // called when we lose window focus
@@ -618,32 +700,51 @@ namespace f3 {
 
         public void PushCockpit(ICockpitInitializer initializer)
         {
+            if (inCapturingObjectCall) {
+                DebugUtil.Log(2, "FContext.PushCockpit: called from inside Behaviour.UpdateCapture(). This is not permitted. Use FContext.RegisterNextFrameAction().");
+                throw new Exception("FContext.PushCockpit: called from inside Behaviour.UpdateCapture(). This is not permitted. Use FContext.RegisterNextFrameAction().");
+            }
+
             Cockpit trackingInitializer = null;
             if (activeCockpit != null) {
                 trackingInitializer = activeCockpit;
                 inputBehaviors.Remove(activeCockpit.InputBehaviors);
                 overrideBehaviors.Remove(activeCockpit.OverrideBehaviors);
+                activeCockpit.InputBehaviors.OnSetChanged -= on_cockpit_behaviors_changed;
+                activeCockpit.OverrideBehaviors.OnSetChanged -= on_cockpit_behaviors_changed;
                 cockpitStack.Push(activeCockpit);
                 activeCockpit.RootGameObject.SetActive(false);
             }
 
             Cockpit c = new Cockpit(this);
             activeCockpit = c;
-            if ( Use2DCockpit )
+            if (Use2DCockpit) {
                 c.UIElementLayer = FPlatform.UILayer;
+                if (options.ConstantSize2DCockpit)
+                    c.EnableConstantSize2DCockpit();
+            }
             c.Start(initializer);
             if (trackingInitializer != null)
                 c.InitializeTracking(trackingInitializer);
-            inputBehaviors.Add(c.InputBehaviors);
-            overrideBehaviors.Add(c.OverrideBehaviors);
+            inputBehaviors.Add(c.InputBehaviors, "active_cockpit");
+            overrideBehaviors.Add(c.OverrideBehaviors, "active_cockpit_override");
+            activeCockpit.InputBehaviors.OnSetChanged += on_cockpit_behaviors_changed;
+            activeCockpit.OverrideBehaviors.OnSetChanged += on_cockpit_behaviors_changed;
 
             mouseCursor.ResetCursorToCenter();
         }
         public void PopCockpit(bool bDestroy)
         {
+            if (inCapturingObjectCall) {
+                DebugUtil.Log(2, "FContext.PopCockpit: called from inside Behaviour.UpdateCapture(). This is not permitted. Use FContext.RegisterNextFrameAction().");
+                throw new Exception("FContext.PopCockpit: called from inside Behaviour.UpdateCapture(). This is not permitted. Use FContext.RegisterNextFrameAction().");
+            }
+
             if (activeCockpit != null) {
                 inputBehaviors.Remove(activeCockpit.InputBehaviors);
                 overrideBehaviors.Remove(activeCockpit.OverrideBehaviors);
+                activeCockpit.InputBehaviors.OnSetChanged -= on_cockpit_behaviors_changed;
+                activeCockpit.OverrideBehaviors.OnSetChanged -= on_cockpit_behaviors_changed;
                 activeCockpit.RootGameObject.SetActive(false);
                 if (bDestroy)
                     activeCockpit.Destroy();
@@ -653,8 +754,10 @@ namespace f3 {
             activeCockpit = cockpitStack.Pop();
             if (activeCockpit != null) {
                 activeCockpit.RootGameObject.SetActive(true);
-                inputBehaviors.Add(activeCockpit.InputBehaviors);
-                overrideBehaviors.Add(activeCockpit.OverrideBehaviors);
+                inputBehaviors.Add(activeCockpit.InputBehaviors, "active_cockpit");
+                overrideBehaviors.Add(activeCockpit.OverrideBehaviors, "active_cockpit_override");
+                activeCockpit.InputBehaviors.OnSetChanged += on_cockpit_behaviors_changed;
+                activeCockpit.OverrideBehaviors.OnSetChanged += on_cockpit_behaviors_changed;
             }
 
             mouseCursor.ResetCursorToCenter();
@@ -665,21 +768,96 @@ namespace f3 {
 
         protected virtual void OnToolActivationChanged(ITool tool, ToolSide eSide, bool bActivated)
         {
-            if (bActivated)
-                inputBehaviors.Add(tool.InputBehaviors);
-            else
+            if (bActivated) {
+                inputBehaviors.Add(tool.InputBehaviors, "active_tool");
+                tool.InputBehaviors.OnSetChanged += on_tool_behaviors_changed;
+            } else {
+                tool.InputBehaviors.OnSetChanged -= on_tool_behaviors_changed;
+                TerminateIfCapturing(tool.InputBehaviors, lastInputState);
                 inputBehaviors.Remove(tool.InputBehaviors);
+            }
+        }
+        void on_tool_behaviors_changed(InputBehaviorSet behaviors)
+        {
+            List<InputBehavior> removed = inputBehaviors.RemoveByGroup("active_tool");
+            TerminateIfCapturing(removed, lastInputState);
+        }
+
+
+
+        InputBehaviorSource activeSOBehaviourSource;
+
+        protected virtual void OnSceneSelectionChanged(object sender, EventArgs e)
+        {
+            InputBehaviorSource newSource = (Scene.Selected.Count == 1) ? Scene.Selected[0] as InputBehaviorSource : null;
+            if ( (newSource != null && newSource == activeSOBehaviourSource) || (newSource == null && activeSOBehaviourSource == null) )
+                return;   // did not actually change
+
+            // remove existing source that is no longer selected
+            if (newSource != activeSOBehaviourSource && activeSOBehaviourSource != null) {
+                activeSOBehaviourSource.InputBehaviors.OnSetChanged -= on_selected_so_behaviors_changed;
+                TerminateIfCapturing(activeSOBehaviourSource.InputBehaviors, lastInputState);
+                inputBehaviors.Remove(activeSOBehaviourSource.InputBehaviors);
+                activeSOBehaviourSource = null;
+            }
+
+            // if new selection has behaviors, register them
+            if (newSource != null) {
+                InputBehaviorSet newBehaviors = newSource.InputBehaviors;
+                if (newBehaviors.Count > 0) {
+                    inputBehaviors.Add(newBehaviors, "active_so");
+                    newBehaviors.OnSetChanged += on_selected_so_behaviors_changed;
+                    activeSOBehaviourSource = newSource;
+                }
+            }
+        }
+        void on_selected_so_behaviors_changed(InputBehaviorSet behaviors)
+        {
+            List<InputBehavior> removed = inputBehaviors.RemoveByGroup("active_so");
+            TerminateIfCapturing(removed, lastInputState);
+        }
+
+        void on_cockpit_behaviors_changed(InputBehaviorSet behaviors)
+        {
+            activeCockpit.InputBehaviors.OnSetChanged -= on_cockpit_behaviors_changed;
+            activeCockpit.OverrideBehaviors.OnSetChanged -= on_cockpit_behaviors_changed;
+
+            // remove from global behavior set
+            List<InputBehavior> actives = inputBehaviors.RemoveByGroup("active_cockpit");
+            List<InputBehavior> overrides = inputBehaviors.RemoveByGroup("active_cockpit_override");
+
+            // if a Behavior that is currently capturing is no longer in active or override sets,
+            // we need to terminate that behavior.
+            actives.RemoveAll((x) => { return activeCockpit.InputBehaviors.Contains(x); });
+            TerminateIfCapturing(actives, lastInputState);
+            overrides.RemoveAll((x) => { return activeCockpit.OverrideBehaviors.Contains(x); });
+            TerminateIfCapturing(overrides, lastInputState);
+
+            inputBehaviors.Add(activeCockpit.InputBehaviors, "active_cockpit");
+            overrideBehaviors.Add(activeCockpit.OverrideBehaviors, "active_cockpit_override");
+            activeCockpit.InputBehaviors.OnSetChanged += on_cockpit_behaviors_changed;
+            activeCockpit.OverrideBehaviors.OnSetChanged += on_cockpit_behaviors_changed;
         }
 
 
 
 
+
+
         // remove all scene stuff and reset view to default
-        public void NewScene()
+        public void NewScene(bool bAnimated, bool bResetView = true)
         {
             if (InCameraManipulation)
                 return;     // not supported yet
 
+            // disable tools, because they might refer to active selection
+            if (ToolManager.HasActiveTool(ToolSide.Left))
+                ToolManager.DeactivateTool(ToolSide.Left);
+            if (ToolManager.HasActiveTool(ToolSide.Right))
+                ToolManager.DeactivateTool(ToolSide.Right);
+
+            Scene.ClearHistory();
+            Scene.ClearSelection();
             Scene.RemoveAllSceneObjects();
             Scene.RemoveAllUIElements();
             Scene.SetCurrentTime(0);
@@ -687,22 +865,28 @@ namespace f3 {
 
             UniqueNames.Reset();
 
-            ResetView();
+            if (bResetView)
+                ResetView(bAnimated);
+
+            // seems like a good time for this...
+            FPlatform.SuggestGarbageCollection();
         }
 
-        public void ResetView()
+        public void ResetView(bool bAnimated)
         {
-            ActiveCamera.Animator().DoActionDuringDipToBlack( () => {
-                    
-            Scene.SetSceneScale(1.0f);
-            ActiveCamera.Manipulator().ResetSceneOrbit(Scene, true, true, true);
-            // [RMS] above should already do this, but sometimes it gets confused..
-            Scene.RootGameObject.SetRotation(Quaternion.identity);
-            ActiveCamera.Manipulator().ResetScenePosition(scene);
-            ActiveCamera.Manipulator().SceneTranslate(Scene, SceneGraphConfig.InitialSceneTranslate, true);
+            Action resetAction = () => {
+                Scene.SetSceneScale(1.0f);
+                ActiveCamera.Manipulator().ResetSceneOrbit(Scene, true, true, true);
+                // [RMS] above should already do this, but sometimes it gets confused..
+                Scene.RootGameObject.SetRotation(Quaternion.identity);
+                ActiveCamera.Manipulator().ResetScenePosition(scene);
+                ActiveCamera.Manipulator().SceneTranslate(Scene, SceneGraphConfig.InitialSceneTranslate, true);
+            };
 
-                }, 0.5f);
-
+            if (bAnimated)
+                ActiveCamera.Animator().DoActionDuringDipToBlack(resetAction, 0.5f);
+            else
+                resetAction();
         }
 
         public void ScaleView(Vector3 vCenterW, float fRadiusW )
@@ -840,9 +1024,16 @@ namespace f3 {
 
 
 
+        public void RegisterEveryFrameAction(Action F) {
+            lock (everyFrameActions) {
+                everyFrameActions.RegisterAction(F);
+            }
+        }
 
 
-       public bool RequestTextEntry(ITextEntryTarget target)
+
+
+        public bool RequestTextEntry(ITextEntryTarget target)
        {
             if ( activeTextTarget != null ) {
                 activeTextTarget.OnEndTextEntry();
@@ -891,6 +1082,9 @@ namespace f3 {
                 return activeTextTarget.OnLeftArrow();
             } else if (Input.GetKeyDown(KeyCode.RightArrow)) {
                 return activeTextTarget.OnRightArrow();
+            } else if (Input.GetKey(KeyCode.LeftControl) && Input.GetKeyUp(KeyCode.V)) {
+                if ( GUIUtility.systemCopyBuffer.Length > 0 )
+                    return activeTextTarget.OnCharacters(GUIUtility.systemCopyBuffer);
             } else if (Input.anyKeyDown) {
                 if (Input.inputString.Length > 0)
                     return activeTextTarget.OnCharacters(Input.inputString);

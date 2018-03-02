@@ -41,6 +41,16 @@ namespace f3
         }
 
 
+
+        public static fMaterial CreateFlatShadedVertexColorMaterialF(Colorf c)
+        {
+            Material m = SafeLoadMaterial("StandardMaterials/flat_vertex_colored");
+            m.color = c;
+            return new fMaterial(m);
+        }
+
+
+
         public static Material CreateTransparentMaterial(Colorf c)
         {
             Material m = SafeLoadMaterial(SceneGraphConfig.DefaultTransparentMaterialPath);
@@ -99,6 +109,10 @@ namespace f3
         }
 
 
+        public static Material CreateDepthWriteOnly() {
+            return SafeLoadMaterial(SceneGraphConfig.DefaultDepthWriteOnlyMaterialPath);
+        }
+
         public static fMaterial CreateParticlesMaterial() {
             Material m = SafeLoadMaterial(SceneGraphConfig.DefaultParticleMaterialPath);
             return new fMaterial(m);
@@ -119,6 +133,7 @@ namespace f3
         public static Material CreateTextMeshMaterial()
         {
             Material m = SafeLoadMaterial("StandardMaterials/default_text_material");
+            m.SetColor("_Color", Color.white);  // [RMS] material has red color set in unity editor...for debugging purposes?
             return m;
         }
         public static void SetTextMeshDefaultMaterial(TextMesh textMesh)
@@ -281,33 +296,57 @@ namespace f3
 
         public static Material ToUnityMaterial(SOMaterial m)
         {
+            Material unityMat = null;
+
             if (m.Type == SOMaterial.MaterialType.TextureMap) {
-                Material unityMat = new Material(Shader.Find("Standard"));
+                unityMat = new Material(Shader.Find("Standard"));
                 unityMat.SetName(m.Name);
                 unityMat.color = m.RGBColor;
                 //if (m.Alpha < 1.0f)
                 //    MaterialUtil.SetupMaterialWithBlendMode(unityMat, MaterialUtil.BlendMode.Transparent);
                 unityMat.mainTexture = m.MainTexture;
-                return unityMat;
 
             } else if (m.Type == SOMaterial.MaterialType.PerVertexColor) {
-                return MaterialUtil.CreateStandardVertexColorMaterial(m.RGBColor);
+                unityMat = MaterialUtil.CreateStandardVertexColorMaterial(m.RGBColor);
+                unityMat.renderQueue += m.RenderQueueShift;
+                unityMat.SetInt("_Cull", (int)m.CullingMode);
+
+            } else if (m.Type == SOMaterial.MaterialType.FlatShadedPerVertexColor) {
+                unityMat = MaterialUtil.CreateFlatShadedVertexColorMaterialF(m.RGBColor);
+                unityMat.renderQueue += m.RenderQueueShift;
+                unityMat.SetInt("_Cull", (int)m.CullingMode);
 
             } else if (m.Type == SOMaterial.MaterialType.TransparentRGBColor) {
-                return MaterialUtil.CreateTransparentMaterial(m.RGBColor);
+                unityMat = MaterialUtil.CreateTransparentMaterial(m.RGBColor);
+                unityMat.renderQueue += m.RenderQueueShift;
 
             } else if (m.Type == SOMaterial.MaterialType.StandardRGBColor) {
-                return MaterialUtil.CreateStandardMaterial(m.RGBColor);
+                unityMat = MaterialUtil.CreateStandardMaterial(m.RGBColor);
+                unityMat.renderQueue += m.RenderQueueShift;
 
             } else if (m.Type == SOMaterial.MaterialType.UnlitRGBColor) {
-                return MaterialUtil.CreateFlatMaterial(m.RGBColor);
+                unityMat = MaterialUtil.CreateFlatMaterial(m.RGBColor);
+                unityMat.renderQueue += m.RenderQueueShift;
+
+            } else if (m.Type == SOMaterial.MaterialType.DepthWriteOnly) {
+                unityMat = MaterialUtil.CreateDepthWriteOnly();
+                unityMat.renderQueue += m.RenderQueueShift;
 
             } else if ( m is UnitySOMaterial ) {
-                return (m as UnitySOMaterial).unityMaterial;
+                unityMat = (m as UnitySOMaterial).unityMaterial;
 
             } else {
-                return MaterialUtil.CreateStandardMaterial(Color.black);
+                unityMat = MaterialUtil.CreateStandardMaterial(Color.black);
             }
+
+            if ( (m.Hints & SOMaterial.HintFlags.UseTransparentPass) != 0)
+                SetupMaterialWithBlendMode(unityMat, BlendMode.Transparent);
+
+            if ( m.MaterialCustomizerF != null ) {
+                m.MaterialCustomizerF(unityMat);
+            }
+
+            return unityMat;
         }
 
 

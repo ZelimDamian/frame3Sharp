@@ -6,6 +6,8 @@ using g3;
 namespace f3
 {
 
+    public delegate void DMeshChangedEventHandler(DMeshSO so);
+
 
     public class DMeshSO : BaseSO, IMeshComponentManager, SpatialQueryableSO
     {
@@ -53,6 +55,10 @@ namespace f3
         }
 
 
+        /// <summary>
+        /// Event will be called whenever our internal mesh changes
+        /// </summary>
+        public event DMeshChangedEventHandler OnMeshModified;
 
 
         public DMeshAABBTree3 Spatial
@@ -66,6 +72,18 @@ namespace f3
         }
 
 
+        override public void AssignSOMaterial(SOMaterial m)
+        {
+            base.AssignSOMaterial(m);
+        }
+        override public void PushOverrideMaterial(fMaterial m)
+        {
+            base.PushOverrideMaterial(m);
+        }
+        override public void PopOverrideMaterial()
+        {
+            base.PopOverrideMaterial();
+        }
 
 
         public void NotifyMeshEdited(bool bVertexDeformation = false)
@@ -76,17 +94,21 @@ namespace f3
                 on_mesh_changed();
                 validate_decomp();
             }
+            post_mesh_modified();
         }
 
 
-        public void ReplaceMesh(DMesh3 newMesh)
+        public void ReplaceMesh(DMesh3 newMesh, bool bTakeOwnership = true)
         {
-            this.mesh = newMesh;
+            if (bTakeOwnership)
+                this.mesh = newMesh;
+            else
+                this.mesh = new DMesh3(newMesh);
 
             on_mesh_changed();
             validate_decomp();
+            post_mesh_modified();
         }
-
 
         public void UpdateVertexPositions(Vector3f[] vPositions) {
             if (vPositions.Length < mesh.MaxVertexID)
@@ -94,6 +116,7 @@ namespace f3
             foreach (int vid in mesh.VertexIndices())
                 mesh.SetVertex(vid, vPositions[vid]);
             fast_mesh_update();
+            post_mesh_modified();
         }
         public void UpdateVertexPositions(Vector3d[] vPositions) {
             if (vPositions.Length < mesh.MaxVertexID)
@@ -101,6 +124,7 @@ namespace f3
             foreach (int vid in mesh.VertexIndices())
                 mesh.SetVertex(vid, vPositions[vid]);
             fast_mesh_update();
+            post_mesh_modified();
         }
 
         // fast update of existing spatial decomp
@@ -120,7 +144,8 @@ namespace f3
         {
             fMesh submesh = new fMesh(C.triangles, mesh, C.source_vertices, true, true, true);
             fMeshGameObject submesh_go = GameObjectFactory.CreateMeshGO("component", submesh, false);
-            submesh_go.SetMaterial(new fMaterial(CurrentMaterial));
+            submesh_go.SetMaterial(this.CurrentMaterial, true);
+            submesh_go.SetLayer(parentGO.GetLayer());
             displayComponents.Add(new DisplayMeshComponent() {
                 go = submesh_go, source_vertices = C.source_vertices
             });
@@ -177,6 +202,13 @@ namespace f3
             }
         }
 
+        void post_mesh_modified()
+        {
+            var tmp = OnMeshModified;
+            if (tmp != null)
+                tmp(this);
+        }
+
 
 
         //
@@ -199,17 +231,44 @@ namespace f3
             get { return true; }
         }
 
+        /// <summary>
+        /// Duplicate this DMeshSO. This will properly instantiate subtypes of DMeshSO,
+        /// but will not copy an data members you add...
+        /// </summary>
         override public SceneObject Duplicate()
         {
-            DMeshSO copy = new DMeshSO();
-            DMesh3 copyMesh = new DMesh3(mesh);
-            copy.Create( copyMesh, this.GetAssignedSOMaterial() );
-            copy.SetLocalFrame(
-                this.GetLocalFrame(CoordSpace.ObjectCoords), CoordSpace.ObjectCoords);
-            copy.SetLocalScale(this.GetLocalScale());
+            DMeshSO copy = (DMeshSO)Activator.CreateInstance(this.GetType());
+            duplicate_to(copy);
             return copy;
         }
 
+        /// <summary>
+        /// explicitly duplicate to any subtype of DMeshSO
+        /// </summary>
+        virtual public T DuplicateSubtype<T>() where T: DMeshSO, new()
+        {
+            T copy = new T();
+            duplicate_to(copy);
+            return copy;
+        }
+
+        /// <summary>
+        /// called internally by Duplicate() and DuplicateSubtype(), 
+        /// override to add things you want to duplicate
+        /// </summary>
+        protected virtual void duplicate_to(DMeshSO copy) {
+            DMesh3 copyMesh = new DMesh3(mesh);
+            copy.Create(copyMesh, this.GetAssignedSOMaterial());
+            copy.SetLocalFrame(
+                this.GetLocalFrame(CoordSpace.ObjectCoords), CoordSpace.ObjectCoords);
+            copy.SetLocalScale(this.GetLocalScale());
+            copy.enable_shadows = this.enable_shadows;
+            copy.enable_spatial = this.enable_spatial;
+        }
+
+
+
+        // [RMS] this is not a good name...
         override public AxisAlignedBox3f GetLocalBoundingBox()
         {
             AxisAlignedBox3f b = (AxisAlignedBox3f)mesh.CachedBounds;
@@ -223,6 +282,45 @@ namespace f3
             enable_shadows = false;
             MaterialUtil.DisableShadows(parentGO, true, true);
         }
+
+        override public void SetLayer(int nLayer)
+        {
+            parentGO.SetLayer(nLayer);
+            base.SetLayer(nLayer);
+        }
+
+
+
+        public void RepositionPivot(Frame3f objFrame)
+        {
+            if (Parent is FScene == false)
+                throw new NotSupportedException("DMeshSO.RepositionMeshFrame: have not tested this!");
+
+            Frame3f curFrame = this.GetLocalFrame(CoordSpace.ObjectCoords);
+            bool bNormals = mesh.HasVertexNormals;
+
+            // map vertices to new frame
+            foreach (int vid in mesh.VertexIndices()) {
+                Vector3f v = (Vector3f)mesh.GetVertex(vid);
+                v = curFrame.FromFrameP(v);   // 
+                v = objFrame.ToFrameP(v);
+                mesh.SetVertex(vid, v);
+
+                if ( bNormals ) {
+                    Vector3f n = mesh.GetVertexNormal(vid);
+                    n = curFrame.FromFrameV(n);
+                    n = objFrame.ToFrameV(n);
+                    mesh.SetVertexNormal(vid, n);
+                }
+            }
+
+            // set new object frame
+            SetLocalFrame(objFrame, CoordSpace.ObjectCoords);
+
+            fast_mesh_update();
+            post_mesh_modified();
+        }
+
 
 
 

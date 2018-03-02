@@ -1,10 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.Collections;
 using System.Runtime.InteropServices;
 using System.IO;
 using System.Threading;
+using g3;
 
 using UnityEngine;
 
@@ -16,6 +15,7 @@ namespace f3
         {
             return LayerMask.NameToLayer(sLayerName);
         }
+        static public int GeometryLayer { get { return GetLayerID(SceneGraphConfig.GeometryLayerName); } }
         static public int WidgetOverlayLayer { get { return GetLayerID(SceneGraphConfig.WidgetOverlayLayerName); } }
         static public int HUDLayer { get { return GetLayerID(SceneGraphConfig.HUDLayerName); } }
         static public int UILayer { get { return GetLayerID(SceneGraphConfig.UILayerName); } }
@@ -29,6 +29,37 @@ namespace f3
         static public fCamera OrthoUICamera;
         static public fCamera CursorCamera;
 
+
+
+        // argh unity can't even return paths to background thread?!?
+        static string app_dataPath = null;
+        static string persistent_dataPath = null;
+        static string temp_dataPath = null;
+
+        /// <summary>
+        /// returns path to xyz_Data\ in builds, and path to Assets\ in editor
+        /// </summary>
+        public static string GameDataFolderPath() {
+            if (app_dataPath == null)
+                app_dataPath = Path.GetFullPath(Application.dataPath);
+            return app_dataPath;
+        }
+
+        public static string PersistentDataPath() {
+            if (persistent_dataPath == null)
+                persistent_dataPath = Path.GetFullPath(Application.persistentDataPath);
+            return persistent_dataPath;
+        }
+
+        public static string TemporaryDataPath() {
+            if (temp_dataPath == null)
+                temp_dataPath = Path.GetFullPath(Application.temporaryCachePath);
+            return temp_dataPath;
+        }
+
+        public static string GameExecutablePath() {
+            return Path.GetFullPath(Path.Combine(GameDataFolderPath(), ".."));
+        }
 
 
         private static float _last_realtime = 0;
@@ -61,15 +92,27 @@ namespace f3
         static public int ScreenHeight {
             get { return Screen.height; }
         }
+        static public float ScreenDPI {
+            get { return (Screen.dpi == 0) ? 96 : Screen.dpi; }
+        }
+
+        // multiplier on Cockpit.GetPixelScale() applied when *not* running in editor.
+        static public float PixelScaleFactor = 1.0f;
+
+        // multiplier on Cockpit.GetPixelScale() applied when running in editor.
+        static public float EditorPixelScaleFactor = 0.5f;
+
 
 
         // argh unity does not have a window resize event built-in ?!??
         static private int window_width = -1, window_height = -1;
+        //static private int startup_height = -1;
         static public bool IsWindowResized()
         {
             if ( window_width == -1 || window_height == -1 ) {
                 window_height = Screen.height;
                 window_width = Screen.width;
+                //startup_height = window_height;
                 return false;
             }
             if ( window_height != Screen.height || window_width != Screen.width ) {
@@ -80,7 +123,14 @@ namespace f3
             return false;
         }
 
-
+        // [RMS] Cockpit uses this to clamp screen-size used for PixelScale. Set to
+        // larger min / smaller max to prevent crazy huge/tiny UI.
+        static Interval1i valid_screen_dim_range = new Interval1i(512, 8096);
+        static public Interval1i ValidScreenDimensionRange
+        {
+            get { return valid_screen_dim_range; }
+            set { valid_screen_dim_range = value; }
+        }
 
 
         static private bool _in_unity_editor = Application.isEditor;
@@ -137,13 +187,6 @@ namespace f3
         }
 
 
-        // pixel-scaled UI elements will (should) be scaled by this amount when
-        // running inside editor. Mainly via Cockpit.GetPixelScale()
-        static public float EditorUIScaleFactor = 0.5f;
-        // this is used when *not* in editor. Can globally scale UI with it,
-        // at least any UI that uses it...
-        static public float UIScaleFactor = 1.0f;
-
 
         static public bool IsUsingVR()
         {
@@ -168,6 +211,11 @@ namespace f3
         static public void InitializeMainThreadID()
         {
             _main_thread = Thread.CurrentThread;
+
+            // for some stupid reason Unity cannot return these paths in background threads, so we have to cache
+            GameDataFolderPath();
+            PersistentDataPath();
+            TemporaryDataPath();
         }
 
         static public bool InMainThread()
@@ -176,6 +224,27 @@ namespace f3
                 throw new Exception("FPlatform.InMainThread: Must call InitializeMainThreadID() first!!");
             return Thread.CurrentThread == _main_thread;
         }
+
+
+
+
+
+        public interface CoroutineExecutor
+        {
+            void StartAnonymousCoroutine(IEnumerator routine);
+        }
+
+        /// <summary>
+        /// Global object you can use at any time to start a Coroutine. Generally set to
+        /// active BaseSceneConfig
+        /// </summary>
+        static public CoroutineExecutor CoroutineExec {
+            get { return coroutine_exec; }
+            set { coroutine_exec = value; }
+        }
+        static CoroutineExecutor coroutine_exec;
+
+
 
 
 
@@ -190,14 +259,37 @@ namespace f3
 
 
 
+        // background threads should kill themselves if this ever becomes true...
+        static public bool ShutdownBackgroundThreadsOnQuit = false;
+
+
+        static public void QuitApplication() {
+            Cursor.lockState = CursorLockMode.None;
+            ShutdownBackgroundThreadsOnQuit = true;
+            Application.Quit();
+        }
+
+
+        static public void SuggestGarbageCollection()
+        {
+            // [RMS] collective wisdom is that the GC is smart enough that we should never do this, 
+            //  except if we *know* many objects just became invalid. Like, when we clear the scene.
+            //  Comment out the call to disable this behavior.
+            GC.Collect();
+        }
+
 
         static public bool ShowingExternalPopup = false;
 
 
 
-        //! Show an open-file dialog and with the provided file types. 
-        //! Returns path to selected file, or null if Cancel is clicked.
-        //! Uses system file dialog if available, otherwise Mono cross-platform dialog
+        /// <summary>
+        /// Show an open-file dialog and with the provided file types. 
+        /// Returns path to selected file, or null if Cancel is clicked.
+        /// Uses system file dialog, via tinyfiledialogs.
+        /// filterPatterns specified like this: new string[] { "*.stl", "*.obj" }
+        /// Note that tinyfiledialogs does not support multiple save-types in save dialog
+        /// </summary>
         static public string GetOpenFileName(string sDialogTitle, string sInitialPathAndFile, 
                 string[] filterPatterns, string sPatternDesc)
         {
@@ -211,12 +303,17 @@ namespace f3
                 filterPatterns.Length, filterPatterns, sPatternDesc, 0);
 
             ShowingExternalPopup = false;
-            Directory.SetCurrentDirectory(curDirectory);
+            try {
+                Directory.SetCurrentDirectory(curDirectory);
+            } catch (Exception) {
+                // [RMS] sometimes this results in an exception? I am confused...
+            }
 
             if (p == IntPtr.Zero)
                 return null;
-            else
-                return stringFromChar(p);
+
+            string s = stringFromChar(p);
+            return s;
 #else
             // [TODO] implement
             return null;
@@ -226,9 +323,13 @@ namespace f3
 
 
 
-        //! Show an open-file dialog and with the provided file types. 
-        //! Returns path to selected file, or null if Cancel is clicked.
-        //! Uses system file dialog if available, otherwise Mono cross-platform dialog
+        /// <summary>
+        /// Show a save-file dialog and with the provided file types. 
+        /// Returns path to selected file, or null if Cancel is clicked.
+        /// Uses system file dialog, via tinyfiledialogs.
+        /// filterPatterns specified like this: new string[] { "*.stl", "*.obj" }
+        /// Note that tinyfiledialogs does not support multiple save-types in save dialog
+        /// </summary>
         static public string GetSaveFileName(string sDialogTitle, string sInitialPathAndFile, 
                 string[] filterPatterns, string sPatternDesc)
         {
@@ -242,12 +343,17 @@ namespace f3
                 filterPatterns.Length, filterPatterns, sPatternDesc);
 
             ShowingExternalPopup = false;
-            Directory.SetCurrentDirectory(curDirectory);
+            try {
+                Directory.SetCurrentDirectory(curDirectory);
+            } catch ( Exception ) {
+                // [RMS] sometimes this results in an exception? I am confused...
+            }
 
             if (p == IntPtr.Zero)
                 return null;
-            else
-                return stringFromChar(p);
+
+            string s = stringFromChar(p);
+            return s;
 #else
             // [TODO] implement
             return null;
@@ -265,6 +371,9 @@ namespace f3
         private static extern System.IntPtr GetActiveWindow();
 #endif
 #if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX)
+
+        // NOTE: tinyfiledialogs is compiled with a flag that means it should output UTF8.
+        // However, seems like it only works if I interpret result with Marshal.PtrToStringAnsi()... ??
 
         [DllImport("tinyfiledialogs", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr tinyfd_inputBox(string aTitle, string aMessage, string aDefaultInput);

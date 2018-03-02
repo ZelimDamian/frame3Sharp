@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using g3;
 
 namespace f3
@@ -14,6 +15,9 @@ namespace f3
     public delegate void SceneModifiedHandler(object sender, SceneObject so, SceneChangeType type);
 	public delegate void SceneSelectionChangedHandler(object sender, EventArgs e);
     public delegate void TimeChangedHandler(object sender, EventArgs e);
+
+    public delegate void SceneSelectedHandler(SceneObject so);
+    public delegate void SceneDeselectedHandler(SceneObject so);
 
 
     public class FScene : SceneUIParent, SOParent
@@ -39,7 +43,6 @@ namespace f3
         public SOMaterial PivotSOMaterial { get; set; }
         public SOMaterial FrameSOMaterial { get; set; }
 
-        public fMaterial SelectedMaterial { get; set; }
         public fMaterial FrameMaterial { get; set; }
         public fMaterial PivotMaterial { get; set; }
 
@@ -52,6 +55,7 @@ namespace f3
 
         fGameObject sceneRoot;
         fGameObject scene_objects;
+        fGameObject transient_objects;
 
 
         List<SceneObject> vObjects;
@@ -63,6 +67,9 @@ namespace f3
         // Objects in Selection Mask will not be selectable, or ray-cast for hit tests
         public HashSet<SceneObject> SelectionMask = null;
 
+        public fMaterial SelectedMaterial { get; set; }
+        public Dictionary<SceneObject, fMaterial> PerObjectSelectionMaterial = new Dictionary<SceneObject, fMaterial>();
+        public Dictionary<SOType, fMaterial> PerTypeSelectionMaterial = new Dictionary<SOType, fMaterial>();
         public bool DisableSelectionMaterial = false;
 
 
@@ -98,6 +105,9 @@ namespace f3
             // for animation playbacks
             sceneRoot.AddComponent<SceneAnimator>().Scene = this;
             sceneRoot.AddComponent<UnityPerFrameAnimationBehavior>().Animator = ObjectAnimator;
+
+            transient_objects = GameObjectFactory.CreateParentGO("transient");
+            sceneRoot.AddChild(transient_objects, false);
 
             scene_objects = GameObjectFactory.CreateParentGO("scene_objects");
             sceneRoot.AddChild(scene_objects, false);
@@ -154,15 +164,23 @@ namespace f3
             get { return sceneRoot; }
         }
 
+        /// <summary>
+        /// Use this instead of RootGameObject if you want to put things in the Scene. Then we can clear
+        /// them out automatically on new scene.
+        /// </summary>
+        public fGameObject TransientObjectsParent {
+            get { return transient_objects; }
+        }
+
 
         public double CurrentTime
         {
             get { return currentTime; }
             set { SetCurrentTime(value); }
         }
-        public void SetCurrentTime(double time)
+        public void SetCurrentTime(double time, bool forceUpdate = false)
         {
-            if (currentTime != time) {
+            if (currentTime != time || forceUpdate) {
                 foreach (SceneObject so in vObjects)
                     so.SetCurrentTime(time);
                 currentTime = time;
@@ -178,6 +196,8 @@ namespace f3
         public event TimeChangedHandler TimeChangedEvent;
         public event SceneSelectionChangedHandler SelectionChangedEvent;
         public event SceneModifiedHandler ChangedEvent;
+        public event SceneSelectedHandler SelectedEvent;
+        public event SceneDeselectedHandler DeselectedEvent;
 
         protected virtual void OnSelectionChanged(EventArgs e) {
             FUtil.SafeSendEvent(SelectionChangedEvent, this, e);
@@ -185,6 +205,15 @@ namespace f3
         protected virtual void OnSceneChanged(SceneObject so, SceneChangeType type) {
             FUtil.SafeSendAnyEvent(ChangedEvent, this, so, type);
         }
+
+
+
+        // discard existing history
+        public void ClearHistory()
+        {
+            history = new ChangeHistory();
+        }
+
 
 
 
@@ -233,9 +262,18 @@ namespace f3
         }
 
 
-        public List<SceneObject> SceneObjects {
+        public IEnumerable<SceneObject> SceneObjects {
             get { return vObjects; }
         }
+        public IEnumerable<SceneObject> VisibleSceneObjects {
+            get {
+                foreach (SceneObject so in SceneObjects) {
+                    if (SceneUtil.IsVisible(so))
+                        yield return so;
+                }
+            }
+        }
+
 
         // add new SO to scene
         public void AddSceneObject(SceneObject so, bool bUseExistingWorldPos = false)
@@ -247,6 +285,8 @@ namespace f3
             so.RootGameObject.SetParent(scene_objects, bUseExistingWorldPos);
             so.Parent = this;
             so.SetCurrentTime(currentTime);
+
+            so.Connect(false);
 
             OnSceneChanged(so, SceneChangeType.Added);
         }
@@ -290,6 +330,7 @@ namespace f3
             }
             vObjects.Remove(so);
             OnSceneChanged(so, SceneChangeType.Removed);
+            so.Disconnect(bDestroy);
 
             if (so.RootGameObject != null) {
                 if (bDestroy) {
@@ -321,9 +362,12 @@ namespace f3
             so.RootGameObject.SetVisible(true);
             scene_objects.AddChild(so.RootGameObject, true);
             so.SetCurrentTime(currentTime);
+            so.Connect(true);
         }
         public void CullDeletedSceneObject(SceneObject so)
         {
+            so.Disconnect(true);
+
             if (vDeleted.Find((x) => x == so) == null)
                 return;
             vDeleted.Remove(so);
@@ -363,13 +407,17 @@ namespace f3
                         foreach (var v in vSelected)
                             v.PopOverrideMaterial();
                     }
+                    var list = new List<SceneObject>(vSelected);
                     vSelected.Clear();
+                    foreach (var so in list)
+                        DeselectedEvent?.Invoke(so);
                 }
 
-				vSelected.Add (s);
-                if ( DisableSelectionMaterial == false )
-                    s.PushOverrideMaterial(SelectedMaterial);
+				vSelected.Add(s);
+                if (DisableSelectionMaterial == false)
+                    push_selection_material(s);
 
+                SelectedEvent?.Invoke(s);
                 OnSelectionChanged(EventArgs.Empty);
 
 				return true;
@@ -388,8 +436,9 @@ namespace f3
 
             if ( DisableSelectionMaterial == false )
                 s.PopOverrideMaterial();        // assume we only pushed once!
-			vSelected.Remove (s);
-			OnSelectionChanged (EventArgs.Empty);
+			vSelected.Remove(s);
+            DeselectedEvent?.Invoke(s);
+			OnSelectionChanged(EventArgs.Empty);
 		}
 
 		public void ClearSelection()
@@ -405,31 +454,41 @@ namespace f3
                 foreach (var v in vSelected)
                     v.PopOverrideMaterial();
             }
-			vSelected = new List<SceneObject> ();
-			OnSelectionChanged (EventArgs.Empty);
+            var list = vSelected;
+			vSelected = new List<SceneObject>();
+            foreach (var so in list)
+                DeselectedEvent?.Invoke(so);
+			OnSelectionChanged(EventArgs.Empty);
 		}
 
 
         public List<SceneObject> Find(Func<SceneObject, bool> filter)
         {
-            return SceneObjects.FindAll( (x) => { return filter(x); } );
+            return vObjects.FindAll( (x) => { return filter(x); } );
         }
 
         public SceneObject FindByUUID(string uuid)
         {
-            return SceneObjects.Find( (x) => { return x.UUID == uuid; } );
+            return vObjects.Find( (x) => { return x.UUID == uuid; } );
         }
 
-		public List<T> FindSceneObjectsOfType<T>() where T : class {
+		public List<T> FindSceneObjectsOfType<T>(bool bSelected = false) where T : class {
 			List<T> result = new List<T>();
-			foreach ( var so in SceneObjects ) {
+            List<SceneObject> source = (bSelected) ? vSelected : vObjects;
+            foreach ( var so in source ) {
 				if (so is T)
 					result.Add(so as T);
 			}
 			return result;
 		}
-
-
+        public IEnumerable<T> SceneObjectsOfType<T>(bool bSelected = false) where T : class
+        {
+            List<SceneObject> source = (bSelected) ? vSelected : vObjects;
+			foreach ( var so in source ) {
+				if (so is T)
+					yield return (so as T);
+			}
+        }
 
 
 
@@ -456,10 +515,17 @@ namespace f3
 			}
 		}
 
-        public void RemoveAllUIElements()
+        public void RemoveAllUIElements(bool bDiscardTransientObjects = true)
         {
             while (vUIElements.Count > 0)
                 RemoveUIElement(vUIElements[0], true);
+
+            // discard any transient objects we have floating around
+            if (bDiscardTransientObjects) {
+                transient_objects.Destroy();
+                transient_objects = GameObjectFactory.CreateParentGO("transient");
+                sceneRoot.AddChild(transient_objects, false);
+            }
         }
 
 
@@ -495,16 +561,16 @@ namespace f3
         }
 
         public bool FindSORayIntersection(Ray3f ray, out SORayHit hit, Func<SceneObject, bool> filter = null) {
-            return HUDUtil.FindNearestRayIntersection(SceneObjects, ray, out hit,
+            return HUDUtil.FindNearestRayIntersection(VisibleSceneObjects, ray, out hit,
                 (SelectionMask == null) ? filter : mask_filter(filter));
         }
 
         public bool FindSORayIntersection_PivotPriority(Ray3f ray, out SORayHit hit, Func<SceneObject, bool> filter = null)
         {
-            bool bHitPivot = HUDUtil.FindNearestRayIntersection(SceneObjects, ray, out hit, (s) => { return s is PivotSO; });
+            bool bHitPivot = HUDUtil.FindNearestRayIntersection(VisibleSceneObjects, ray, out hit, (s) => { return s is PivotSO; });
             if (bHitPivot)
                 return true;
-            return HUDUtil.FindNearestRayIntersection(SceneObjects, ray, out hit,
+            return HUDUtil.FindNearestRayIntersection(VisibleSceneObjects, ray, out hit,
                                 (SelectionMask == null) ? filter : mask_filter(filter));
         }
 
@@ -524,7 +590,7 @@ namespace f3
 						bestUIHit = uiHit;
 				}
 			}
-			foreach (var so in vObjects) {
+			foreach (var so in VisibleSceneObjects) {
                 if (!is_selectable(so))
                     continue;
 				SORayHit objHit;
@@ -661,9 +727,34 @@ namespace f3
         }
 
 
-        //public Vector3f TransferPoint(SceneObject fromSO, SceneObject toSO, Vector3f point)
-        //{
-        //}
+
+
+
+
+
+        /*
+         *  internals
+         */
+
+
+        // selection material handling
+        void push_selection_material(SceneObject so)
+        {
+            if (DisableSelectionMaterial)
+                throw new Exception("FScene.push_selection_material: disabled!");
+
+            fMaterial objectMat;
+            if (PerObjectSelectionMaterial.TryGetValue(so, out objectMat)) {
+                so.PushOverrideMaterial(objectMat);
+                return;
+            }
+            fMaterial typeMat;
+            if ( PerTypeSelectionMaterial.TryGetValue(so.Type, out typeMat)) {
+                so.PushOverrideMaterial(typeMat);
+                return;
+            }
+            so.PushOverrideMaterial(SelectedMaterial);
+        }
 
     }
 }

@@ -65,6 +65,11 @@ namespace f3
         }
 
 
+        public virtual bool IsDestroyed {
+            // see http://answers.unity3d.com/questions/13840/how-to-detect-if-a-gameobject-has-been-destroyed.html
+            get { return go == null && ReferenceEquals(go, null) == false; }
+        }
+
 
         // allow game object wrapper to do things here, eg lazy updates, etc
         // This will be called by the GameObject itself, using the PreRenderBehavior (!)
@@ -165,8 +170,10 @@ namespace f3
 
         public virtual void SetColor(Colorf color)
         {
-            Renderer r = go.GetComponent<Renderer>();
-            r.material.color = color;
+            if (go != null) {
+                Renderer r = go.GetComponent<Renderer>();
+                r.material.color = color;
+            }
         }
 
 
@@ -180,15 +187,15 @@ namespace f3
 
 
 
-        public void Hide()
+        public virtual void Hide()
         {
-            go.Hide();
+            SetVisible(false);
         }
-        public void Show()
+        public virtual void Show()
         {
-            go.Show();
+            SetVisible(true);
         }
-        public void SetVisible(bool bVisible)
+        public virtual void SetVisible(bool bVisible)
         {
             go.SetVisible(bVisible);
         }
@@ -198,7 +205,7 @@ namespace f3
         }
 
 
-        public void SetActive(bool bActive)
+        public virtual void SetActive(bool bActive)
         {
             go.SetActive(bActive);
         }
@@ -297,6 +304,12 @@ namespace f3
         public virtual void Translate(Vector3f translation, bool bFrameAxes)
         {
             go.transform.Translate(translation, bFrameAxes ? Space.Self : Space.World  );
+        }
+
+
+        public virtual void SetIgnoreMaterialChanges()
+        {
+            AddComponent<IgnoreMaterialChanges>();
         }
 
 
@@ -708,6 +721,15 @@ namespace f3
     public class PreRenderBehavior : MonoBehaviour
     {
         public fGameObject ParentFGO = null;
+
+        List<Action> AdditionalActions = null;
+        public void AddAction(Action a)
+        {
+            if (AdditionalActions == null)
+                AdditionalActions = new List<Action>();
+            AdditionalActions.Add(a);
+        }
+
         void Update() {
             // [RMS] this can be null if we created a GO by copying an fGO using Unity functions (eg Object.Instantiate).
             // The GO wil be created, and the PreRenderBehavior script will be copied, however there
@@ -716,6 +738,32 @@ namespace f3
             // Currently only happens when using UnityWrapperSO? so not a crisis.
             if ( ParentFGO != null )
                 ParentFGO.PreRender();
+
+            if (AdditionalActions != null) {
+                foreach (var action in AdditionalActions)
+                    action();
+            }
+        }
+    }
+
+
+
+
+    /// <summary>
+    /// Behavior that causes parent GO to track the transform of another GO. Allows for
+    /// 'attaching' objects to eachother w/o parenting.
+    /// </summary>
+    public class TrackObjectBehavior : MonoBehaviour
+    {
+        public fGameObject TrackGO = null;
+        public bool TrackScale = false;
+
+        void LateUpdate()
+        {
+            this.gameObject.transform.position = TrackGO.GetPosition();
+            this.gameObject.transform.rotation = TrackGO.GetRotation();
+            if (TrackScale)
+                this.gameObject.transform.localScale = TrackGO.GetLocalScale();
         }
     }
 

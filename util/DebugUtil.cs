@@ -38,6 +38,9 @@ namespace f3
             if (nLevel <= LogLevel)
                 Debug.Log(string.Format(text, args));
         }
+        static public void Log(string text, params object[] args) {
+            Debug.Log(string.Format(text, args));
+        }
 
         // Warning always prints
         static public void Warning(string sMessage) {
@@ -181,6 +184,7 @@ namespace f3
                 verts[i] = (Vector3)curve[i];
             lr.positionCount = curve.Length;
             lr.SetPositions(verts);
+            lr.loop = bClosed;
             lr.useWorldSpace = (parent == null && bIsInWorldPos);
 
             if (parent != null)
@@ -205,6 +209,40 @@ namespace f3
 			GameObject z = EmitDebugLine (name+"_z", f.Origin, f.Origin + fAxisLength * f.Z, diameter, Color.blue);
 			z.transform.parent = frame.transform;
 		}
+
+
+
+        static public fGameObject EmitDebugBox(string name, Box3d box, Colorf color, GameObject parent = null, bool bIsInWorldPos = true)
+        {
+            if (FPlatform.InMainThread() == false) {
+                ThreadMailbox.PostToMainThread(() => { DebugUtil.EmitDebugBox(name, box, color, parent, bIsInWorldPos); });
+                return null;
+            }
+            TrivialBox3Generator boxgen = new TrivialBox3Generator() { Box = box, NoSharedVertices = true, Clockwise = true };
+            boxgen.Generate();
+            DMesh3 mesh = boxgen.MakeDMesh();
+            fMeshGameObject fMeshGO = GameObjectFactory.CreateMeshGO(name, new fMesh(mesh), false, true);
+            fMeshGO.SetMaterial(MaterialUtil.CreateStandardMaterialF(color));
+            if (parent != null)
+                parent.AddChild(fMeshGO, bIsInWorldPos);
+            return fMeshGO;
+        }
+
+
+
+        static public fGameObject EmitDebugMesh(string name, DMesh3 meshIn, Colorf color, GameObject parent = null, bool bIsInWorldPos = true)
+        {
+            DMesh3 mesh = new DMesh3(meshIn);
+            if (FPlatform.InMainThread() == false) {
+                ThreadMailbox.PostToMainThread(() => { DebugUtil.EmitDebugMesh(name, mesh, color, parent, bIsInWorldPos); });
+                return null;
+            }
+            fMeshGameObject fMeshGO = GameObjectFactory.CreateMeshGO(name, new fMesh(mesh), false, true);
+            fMeshGO.SetMaterial(MaterialUtil.CreateStandardMaterialF(color));
+            if (parent != null)
+                parent.AddChild(fMeshGO, bIsInWorldPos);
+            return fMeshGO;
+        }
 
 
 

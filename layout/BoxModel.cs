@@ -40,7 +40,10 @@ namespace f3
         public static Vector2f GetBoxPosition(IBoxModelElement element, BoxPosition pos)
         {
             AxisAlignedBox2f bounds = element.Bounds2D;
-
+            return GetBoxPosition(ref bounds, pos);
+        }
+        public static Vector2f GetBoxPosition(ref AxisAlignedBox2f bounds, BoxPosition pos)
+        {
             switch (pos) {
                 case BoxPosition.Center: return bounds.Center;
                 case BoxPosition.BottomLeft: return bounds.BottomLeft;
@@ -97,7 +100,7 @@ namespace f3
         public static FixedBoxModelElement PaddedBounds(IBoxModelElement element, float fPadLeft, float fPadRight, float fPadBottom, float fPadTop)
         {
             AxisAlignedBox2f bounds = element.Bounds2D;
-            bounds.Pad(-fPadLeft, -fPadRight, -fPadBottom, -fPadTop);
+            bounds.Add(-fPadLeft, -fPadRight, -fPadBottom, -fPadTop);
             return new FixedBoxModelElement(bounds);
         }
 
@@ -133,7 +136,7 @@ namespace f3
 
 
         // kind of feeling like this should maybe go somewhere else...
-        public static void SetObjectPosition( IBoxModelElement element, Vector2f vObjectPoint, 
+        public static Vector3f SetObjectPosition( IBoxModelElement element, Vector2f vObjectPoint, 
                                               Vector2f vTargetPoint, float z = 0)
         {
             IElementFrame item = element as IElementFrame;
@@ -141,13 +144,15 @@ namespace f3
             Vector2f vOffset = GetRelativeOffset(element, vObjectPoint);
             Vector2f vNewPos = vTargetPoint - vOffset;
 
-            Frame3f f = new Frame3f(new Vector3f(vNewPos.x, vNewPos.y, z));
+            Vector3f vPos3 = new Vector3f(vNewPos.x, vNewPos.y, z);
+            Frame3f f = new Frame3f(vPos3);
             item.SetObjectFrame(f);
+            return vPos3;
         }
 
 
         // kind of feeling like this should maybe go somewhere else...
-        public static void SetObjectPosition( IBoxModelElement element, BoxPosition objectPos, 
+        public static Vector3f SetObjectPosition( IBoxModelElement element, BoxPosition objectPos, 
                                               Vector2f pos, float z = 0)
         {
             IElementFrame item = element as IElementFrame;
@@ -155,18 +160,20 @@ namespace f3
             Vector2f corner_offset = GetBoxOffset(element, objectPos);
             Vector2f new_pos = pos - corner_offset;
 
-            Frame3f f = new Frame3f(new Vector3f(new_pos.x, new_pos.y, z));
+            Vector3f vPos3 = new Vector3f(new_pos.x, new_pos.y, z);
+            Frame3f f = new Frame3f(vPos3);
             item.SetObjectFrame(f);
+            return vPos3;
         }
 
 
-        public static void SetObjectPosition( IBoxModelElement element, BoxPosition elemPos,
+        public static Vector3f SetObjectPosition( IBoxModelElement element, BoxPosition elemPos,
             IBoxModelElement relativeTo, BoxPosition relPos, 
             Vector2f vOffset, float z = 0)
         {
             Vector2f pos = GetBoxPosition(relativeTo, relPos);
             pos += vOffset;
-            SetObjectPosition(element, elemPos, pos, z);
+            return SetObjectPosition(element, elemPos, pos, z);
         }
 
 
@@ -198,8 +205,6 @@ namespace f3
         }
 
 
-
-
         public static BoxPosition ToPosition(HorizontalAlignment h, VerticalAlignment v)
         {
             switch (h) {
@@ -229,6 +234,29 @@ namespace f3
             }
             // shouldn't be able to get here...
             throw new Exception("BoxModel.ToPosition: unknown combination??");
+        }
+
+
+        public static BoxPosition ToBottom(BoxPosition p)
+        {
+            if (p == BoxPosition.TopLeft || p == BoxPosition.CenterLeft)
+                return BoxPosition.BottomLeft;
+            else if (p == BoxPosition.CenterTop || p == BoxPosition.Center)
+                return BoxPosition.CenterBottom;
+            else if (p == BoxPosition.TopRight || p == BoxPosition.CenterRight)
+                return BoxPosition.BottomRight;
+            return p;
+        }
+
+        public static BoxPosition ToTop(BoxPosition p)
+        {
+            if (p == BoxPosition.BottomLeft || p == BoxPosition.CenterLeft)
+                return BoxPosition.TopLeft;
+            else if (p == BoxPosition.CenterBottom || p == BoxPosition.Center)
+                return BoxPosition.CenterTop;
+            else if (p == BoxPosition.BottomRight || p == BoxPosition.CenterRight)
+                return BoxPosition.TopRight;
+            return p;
         }
 
 

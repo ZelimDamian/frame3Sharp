@@ -22,7 +22,7 @@ namespace f3
         /// <summary>
         /// Assuming pointIn is in space eFrom of fromSO, transform to eTo
         /// </summary>
-        public static Vector3f TransformTo(Vector3f pointIn, TransformableSO fromSO, CoordSpace eFrom, CoordSpace eTo)
+        public static Vector3f TransformTo(Vector3f pointIn, SceneObject fromSO, CoordSpace eFrom, CoordSpace eTo)
         {
             // this is not the most efficient but we can optimize later!
             Frame3f f = new Frame3f(pointIn);
@@ -34,7 +34,7 @@ namespace f3
         /// <summary>
         /// Assuming frameIn is in space eFrom of fromSO, transform to eTo
         /// </summary>
-        public static Frame3f TransformTo(Frame3f frameIn, TransformableSO fromSO, CoordSpace eFrom, CoordSpace eTo)
+        public static Frame3f TransformTo(Frame3f frameIn, SceneObject fromSO, CoordSpace eFrom, CoordSpace eTo)
         {
             if (eFrom == eTo)
                 return frameIn;
@@ -70,7 +70,7 @@ namespace f3
         /// <summary>
         /// Assuming dimensionIn is in space eFrom of fromSO, transform to eTo
         /// </summary>
-        public static float TransformTo(float dimensionIn, TransformableSO fromSO, CoordSpace eFrom, CoordSpace eTo)
+        public static float TransformTo(float dimensionIn, SceneObject fromSO, CoordSpace eFrom, CoordSpace eTo)
         {
             if (eFrom == eTo)
                 return dimensionIn;
@@ -97,11 +97,39 @@ namespace f3
                 return scene.ToWorldDimension(sceneDim);
 
             // only thing left is going from Scene to Object
-            //return SceneToObject(fromSO, sceneDim);
-            throw new NotImplementedException("SceneTransforms.TransformTo: transforming to object coordinates not supported yet");
+            return SceneToObject(fromSO, sceneDim);
         }
 
 
+
+
+
+        /// <summary>
+        /// transform frame from Object coords of fromSO into Object coords of toSO
+        /// </summary>
+        public static Frame3f TransformTo(Frame3f frameIn, SceneObject fromSO, SceneObject toSO)
+        {
+            Frame3f frameS = TransformTo(frameIn, fromSO, CoordSpace.ObjectCoords, CoordSpace.SceneCoords);
+            return TransformTo(frameS, toSO, CoordSpace.SceneCoords, CoordSpace.ObjectCoords);
+        }
+
+        /// <summary>
+        /// transform point from Object coords of fromSO into Object coords of toSO
+        /// </summary>
+        public static Vector3f TransformTo(Vector3f ptIn, SceneObject fromSO, SceneObject toSO)
+        {
+            Frame3f frameS = TransformTo(new Frame3f(ptIn), fromSO, CoordSpace.ObjectCoords, CoordSpace.SceneCoords);
+            return TransformTo(frameS, toSO, CoordSpace.SceneCoords, CoordSpace.ObjectCoords).Origin;
+        }
+
+        /// <summary>
+        /// transform point from Object coords of fromSO into Object coords of toSO
+        /// </summary>
+        public static Vector3d TransformTo(Vector3d ptIn, SceneObject fromSO, SceneObject toSO)
+        {
+            Frame3f frameS = TransformTo(new Frame3f((Vector3f)ptIn), fromSO, CoordSpace.ObjectCoords, CoordSpace.SceneCoords);
+            return TransformTo(frameS, toSO, CoordSpace.SceneCoords, CoordSpace.ObjectCoords).Origin;
+        }
 
 
 
@@ -132,32 +160,76 @@ namespace f3
         /// Input sceneF is a frame in Scene, apply all intermediate inverse 
         /// transforms to get it into local frame of a SO
         /// </summary>
-        public static Frame3f SceneToObject(TransformableSO so, Frame3f sceneF)
+        public static Frame3f SceneToObject(SceneObject so, Frame3f sceneF)
         {
             SOParent parent = so.Parent;
             if (parent is FScene)
                 return ApplyInverseTransform(so, sceneF);
             // this will recursively apply all the inverse parent transforms from scene on down
-            return ApplyInverseTransform(so, SceneToObject(parent as TransformableSO, sceneF));
+            return ApplyInverseTransform(so, SceneToObject(parent as SceneObject, sceneF));
+        }
+
+
+        /// <summary>
+        /// Input ray is a frame in Scene, apply all intermediate inverse 
+        /// transforms to get it into local frame of a SO
+        /// </summary>
+        public static Ray3f SceneToObject(SceneObject so, Ray3f ray)
+        {
+            Frame3f f = new Frame3f(ray.Origin, ray.Direction);
+            Frame3f fO = SceneToObject(so, f);
+            return new Ray3f(fO.Origin, fO.Z);
         }
 
         /// <summary>
         /// Input sceneF is a point in Scene, apply all intermediate inverse 
         /// transforms to get it into local point of a SO
         /// </summary>
-        public static Vector3f SceneToObject(TransformableSO so, Vector3f scenePt)
+        public static Vector3f SceneToObjectP(SceneObject so, Vector3f scenePt)
         {
             Frame3f f = new Frame3f(scenePt);
             Frame3f fO = SceneToObject(so, f);
             return fO.Origin;
         }
-
-        public static Vector3d SceneToObject(TransformableSO so, Vector3d scenePt)
+        public static Vector3d SceneToObjectP(SceneObject so, Vector3d scenePt)
         {
-            return (Vector3d)SceneToObject(so, (Vector3f)scenePt);
+            return (Vector3d)SceneToObjectP(so, (Vector3f)scenePt);
+        }
+
+        /// <summary>
+        /// Input sceneN is a normal vector in Scene, apply all intermediate inverse 
+        /// transforms to get it into local point of a SO. **NO SCALING**
+        /// </summary>
+        public static Vector3f SceneToObjectN(SceneObject so, Vector3f sceneN)
+        {
+            Frame3f f = new Frame3f(Vector3f.Zero, sceneN);
+            Frame3f fO = SceneToObject(so, f);
+            return fO.Z;
+        }
+
+        /// <summary>
+        /// input dimension is in scene coords of so, (recursively) apply all 
+        /// intermediate inverse-scales to get it to Scene coords
+        /// </summary>
+        public static float SceneToObject(SceneObject so, float sceneDim)
+        {
+            return inverse_scale_recursive(so, sceneDim);
+        }
+        static float inverse_scale_recursive(SceneObject so, float dim)
+        {
+            if (so.Parent is FScene)
+                return dim;
+            Vector3f scale = so.GetLocalScale();
+            Util.gDevAssert(IsUniformScale(scale));
+            float avgscale = ((scale.x + scale.y + scale.z) / 3.0f);   // yikes!
+            return inverse_scale_recursive(so.Parent as SceneObject, dim) / avgscale;
         }
 
 
+        [System.Obsolete("Renamed to SceneToObjectP")]
+        public static Vector3f SceneToObject(SceneObject so, Vector3f scenePt) { return SceneToObjectP(so, scenePt); }
+        [System.Obsolete("Renamed to SceneToObjectP")]
+        public static Vector3d SceneToObject(SceneObject so, Vector3d scenePt) { return SceneToObjectP(so, scenePt); }
 
 
 
@@ -166,10 +238,10 @@ namespace f3
         /// input dimension is in Object (local) coords of so, apply all intermediate 
         /// transform scaling to get it to Scene coords
         /// </summary>
-        public static float ObjectToScene(TransformableSO so, float objectDim)
+        public static float ObjectToScene(SceneObject so, float objectDim)
         {
             float sceneDim = objectDim;
-            TransformableSO curSO = so;
+            SceneObject curSO = so;
             while (curSO != null) {
                 Vector3f scale = curSO.GetLocalScale();
                 Util.gDevAssert(IsUniformScale(scale));
@@ -177,7 +249,7 @@ namespace f3
                 SOParent parent = curSO.Parent;
                 if (parent is FScene)
                     return sceneDim;
-                curSO = (parent as TransformableSO);
+                curSO = (parent as SceneObject);
             }
             if (curSO == null)
                 DebugUtil.Error("SceneTransforms.TransformTo: found null parent SO!");
@@ -189,10 +261,10 @@ namespace f3
         /// input objectF is in Object (local) coords of so, apply all intermediate 
         /// transforms to get it to Scene coords
         /// </summary>
-        public static Frame3f ObjectToScene(TransformableSO so, Frame3f objectF)
+        public static Frame3f ObjectToScene(SceneObject so, Frame3f objectF)
         {
             Frame3f sceneF = objectF;
-            TransformableSO curSO = so;
+            SceneObject curSO = so;
             while (curSO != null) {
                 Frame3f curF = curSO.GetLocalFrame(CoordSpace.ObjectCoords);
                 Vector3f scale = curSO.GetLocalScale();
@@ -202,11 +274,22 @@ namespace f3
                 SOParent parent = curSO.Parent;
                 if (parent is FScene)
                     return sceneF;
-                curSO = (parent as TransformableSO);
+                curSO = (parent as SceneObject);
             }
             if (curSO == null)
                 DebugUtil.Error("SceneTransforms.TransformTo: found null parent SO!");
             return sceneF;
+        }
+
+        /// <summary>
+        /// input ray is in Object (local) coords of so, apply all intermediate 
+        /// transforms to get it to Scene coords
+        /// </summary>
+        public static Ray3f ObjectToSceneP(SceneObject so, Ray3f ray)
+        {
+            Frame3f f = new Frame3f(ray.Origin, ray.Direction);
+            Frame3f fS = ObjectToScene(so, f);
+            return new Ray3f(fS.Origin, fS.Z);
         }
 
 
@@ -214,18 +297,86 @@ namespace f3
         /// input objectF is in Object (local) coords of so, apply all intermediate 
         /// transforms to get it to Scene coords
         /// </summary>
-        public static Vector3f ObjectToScene(TransformableSO so, Vector3f objectPt)
+        public static Vector3f ObjectToSceneP(SceneObject so, Vector3f objectPt)
         {
             Frame3f f = new Frame3f(objectPt);
             Frame3f fS = ObjectToScene(so, f);
             return fS.Origin;
         }
-
-        public static Vector3d ObjectToScene(TransformableSO so, Vector3d scenePt)
+        public static Vector3d ObjectToSceneP(SceneObject so, Vector3d scenePt)
         {
-            return (Vector3d)ObjectToScene(so, (Vector3f)scenePt);
+            return (Vector3d)ObjectToSceneP(so, (Vector3f)scenePt);
         }
 
+
+        /// <summary>
+        /// Input sceneN is a normal vector in local coords of SO, apply all intermediate inverse 
+        /// transforms to get it into scene coords. **NO SCALING**
+        /// </summary>
+        public static Vector3f ObjectToSceneN(SceneObject so, Vector3f objectN)
+        {
+            Frame3f f = new Frame3f(Vector3f.Zero, objectN);
+            Frame3f fO = ObjectToScene(so, f);
+            return fO.Z;
+        }
+
+        [System.Obsolete("Renamed to SceneToObjectP")]
+        public static Vector3f ObjectToScene(SceneObject so, Vector3f objectPt) { return ObjectToSceneP(so, objectPt); }
+        [System.Obsolete("Renamed to SceneToObjectP")]
+        public static Vector3d ObjectToScene(SceneObject so, Vector3d objectPt) { return ObjectToSceneP(so, objectPt); }
+
+
+
+
+
+        /// <summary>
+        /// convert input sceneF in Scene to World
+        /// </summary>
+        public static Frame3f SceneToWorld(FScene scene, Frame3f sceneF) {
+            return scene.ToWorldFrame(sceneF);
+        }
+        public static Vector3f SceneToWorldP(FScene scene, Vector3f scenePt) {
+            return scene.ToWorldP(scenePt);
+        }
+        public static Vector3d SceneToWorldP(FScene scene, Vector3d scenePt) {
+            return scene.ToWorldP(scenePt);
+        }
+        public static Vector3f SceneToWorldN(FScene scene, Vector3f sceneN) {
+            return scene.ToWorldN(sceneN);
+        }
+        public static Vector3d SceneToWorldN(FScene scene, Vector3d sceneN) {
+            return scene.ToWorldN((Vector3f)sceneN);
+        }
+
+        [System.Obsolete("Renamed to SceneToWorldP")]
+        public static Vector3f SceneToWorld(FScene scene, Vector3f scenePt) { return SceneToWorldP(scene, scenePt); }
+        [System.Obsolete("Renamed to SceneToWorldP")]
+        public static Vector3d SceneToWorld(FScene scene, Vector3d scenePt) { return SceneToWorldP(scene, scenePt); }
+
+
+        /// <summary>
+        /// convert input sceneF in World into Scene
+        /// </summary>
+        public static Frame3f WorldToScene(FScene scene, Frame3f sceneF) {
+            return scene.ToSceneFrame(sceneF);
+        }
+        public static Vector3f WorldToSceneP(FScene scene, Vector3f scenePt) {
+            return scene.ToSceneP(scenePt);
+        }
+        public static Vector3d WorldToSceneP(FScene scene, Vector3d scenePt) {
+            return scene.ToSceneP(scenePt);
+        }
+        public static Vector3f WorldToSceneN(FScene scene, Vector3f sceneN) {
+            return scene.ToSceneN(sceneN);
+        }
+        public static Vector3d WorldToSceneN(FScene scene, Vector3d sceneN) {
+            return scene.ToSceneN((Vector3f)sceneN);
+        }
+
+        [System.Obsolete("Renamed to WorldToSceneP")]
+        public static Vector3f WorldToScene(FScene scene, Vector3f scenePt) { return WorldToSceneP(scene, scenePt); }
+        [System.Obsolete("Renamed to WorldToSceneP")]
+        public static Vector3d WorldToScene(FScene scene, Vector3d scenePt) { return WorldToSceneP(scene, scenePt); }
 
     }
 }

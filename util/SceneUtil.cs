@@ -39,21 +39,6 @@ namespace f3
         }
 
 
-        // stupid but convenient
-        public static bool FindNearestRayIntersection(IEnumerable<TransformableSO> vSceneObjects, Ray ray, out SORayHit hit) {
-            hit = null;
-            foreach (var so in vSceneObjects) {
-                SORayHit soHit;
-                if (so.FindRayIntersection(ray, out soHit)) {
-                    if (hit == null || soHit.fHitDist < hit.fHitDist)
-                        hit = soHit;
-                }
-            }
-            return (hit != null);
-        }
-
-
-
 
 
 
@@ -77,17 +62,15 @@ namespace f3
 
 
         // descends parent/child SO hierarchy and finds the set of topmost non-temporary SOs
-        public static void FindAllPersistentTransformableChildren(SceneObject vParent, List<TransformableSO> children)
+        public static void FindAllPersistentTransformableChildren(SceneObject vParent, List<SceneObject> children)
         {
             if ( (vParent is SOCollection) == false )
                 return;
             foreach ( SceneObject so in (vParent as SOCollection).GetChildren() ) {
-                if ((so is TransformableSO) == false)
-                    continue;
                 if (so.IsTemporary)
                     FindAllPersistentTransformableChildren(so, children);
                 else
-                    children.Add(so as TransformableSO);
+                    children.Add(so);
             }
         }
 
@@ -95,12 +78,22 @@ namespace f3
         public static Frame3f GetSOLocalFrame(SceneObject so, CoordSpace eSpace)
         {
             if (eSpace == CoordSpace.SceneCoords) {
-                Frame3f sceneW = UnityUtil.GetGameObjectFrame(so.GetScene().RootGameObject, CoordSpace.WorldCoords);
-                Frame3f objW = UnityUtil.GetGameObjectFrame(so.RootGameObject, CoordSpace.WorldCoords);
-                Frame3f result = sceneW.ToFrame(objW);
-                // world coords have scene scale applied, we don't want that in scene coords
-                if (so.GetScene().GetSceneScale() != 1.0f)
-                    result = result.Scaled(1.0f / so.GetScene().GetSceneScale());
+                // new code maps object frame up to scene
+                // [TODO] this is not the most efficient approach! can at least get the object
+                //   frame directly, and avoid first local-to-obj xform
+                Frame3f objF = Frame3f.Identity;
+                Frame3f result = SceneTransforms.ObjectToScene(so, objF);
+
+                // [RMS] old code that mapped up to world, and then down to scene
+                //   Problem with this code is that it is unstable - if scene-to-world xform changes,
+                //   then scene frame will numerically change. Which is a problem.
+                //Frame3f sceneW = UnityUtil.GetGameObjectFrame(so.GetScene().RootGameObject, CoordSpace.WorldCoords);
+                //Frame3f objW = UnityUtil.GetGameObjectFrame(so.RootGameObject, CoordSpace.WorldCoords);
+                //Frame3f result = sceneW.ToFrame(objW);
+                //// world coords have scene scale applied, we don't want that in scene coords
+                //if (so.GetScene().GetSceneScale() != 1.0f)
+                //    result = result.Scaled(1.0f / so.GetScene().GetSceneScale());
+
                 return result;
             } else
                 return UnityUtil.GetGameObjectFrame(so.RootGameObject, eSpace);
@@ -111,10 +104,11 @@ namespace f3
             if (eSpace == CoordSpace.SceneCoords) {
                 // scene frames should not be scaled by scene scale, but we want to set as world
                 // coords, so we need to apply it now
-                if (so.GetScene().GetSceneScale() != 1.0f)
-                    newFrame = newFrame.Scaled(so.GetScene().GetSceneScale());
-                Frame3f sceneW = UnityUtil.GetGameObjectFrame(so.GetScene().RootGameObject, CoordSpace.WorldCoords);
-                Frame3f objW = sceneW.FromFrame(newFrame);
+                //if (so.GetScene().GetSceneScale() != 1.0f)
+                //    newFrame = newFrame.Scaled(so.GetScene().GetSceneScale());
+                //Frame3f sceneW = UnityUtil.GetGameObjectFrame(so.GetScene().RootGameObject, CoordSpace.WorldCoords);
+                //Frame3f objW = sceneW.FromFrame(newFrame);
+                Frame3f objW = so.GetScene().ToWorldFrame(newFrame);
                 UnityUtil.SetGameObjectFrame(so.RootGameObject, objW, CoordSpace.WorldCoords);
             } else
                 UnityUtil.SetGameObjectFrame(so.RootGameObject, newFrame, eSpace);
@@ -122,7 +116,7 @@ namespace f3
 
 
 
-        public static void TranslateInFrame(TransformableSO so, Vector3f translate, CoordSpace eSpace = CoordSpace.ObjectCoords)
+        public static void TranslateInFrame(SceneObject so, Vector3f translate, CoordSpace eSpace = CoordSpace.ObjectCoords)
         {
             Frame3f f = so.GetLocalFrame(eSpace);
             f.Origin += translate;
@@ -193,7 +187,7 @@ namespace f3
 
 
 
-        public static GroupSO CreateGroupSO(TransformableSO so1, TransformableSO so2)
+        public static GroupSO CreateGroupSO(SceneObject so1, SceneObject so2)
         {
             FScene scene = so1.GetScene();
             if (scene.IsSelected(so1))
@@ -264,13 +258,30 @@ namespace f3
 
 
         // not sure where these should go...
+        public static void SetVisible(SceneObject so, bool bVisible)
+        {
+            if ( so.RootGameObject.IsVisible() != bVisible ) {
+                if (bVisible)
+                    Show(so);
+                else
+                    Hide(so);
+            }
+        }
         public static void Show(SceneObject so)
         {
             so.RootGameObject.Show();
+            if ( so is SOCollection ) {
+                foreach (SceneObject childso in (so as SOCollection).GetChildren())
+                    Show(childso);
+            }
         }
         public static void Hide(SceneObject so)
         {
             so.RootGameObject.Hide();
+            if ( so is SOCollection ) {
+                foreach (SceneObject childso in (so as SOCollection).GetChildren())
+                    Hide(childso);
+            }
         }
         public static bool IsVisible(SceneObject so)
         {
@@ -285,6 +296,33 @@ namespace f3
             so.SetScene(null);
             UnityEngine.Object.Destroy(so.RootGameObject);
         }
+
+
+
+        public static bool IsSelectionMatch(FScene scene, Type type, int count)
+        {
+            var c = scene.Selected;
+            if (c.Count != count)
+                return false;
+            foreach ( var o in c ) {
+                if ( ! type.IsAssignableFrom(o.GetType()) )
+                    return false;
+            }
+            return true;
+        }
+        public static bool IsSelectionMatch(FScene scene, params Type[] typeList)
+        {
+            var c = scene.Selected;
+            if (c.Count != typeList.Length)
+                return false;
+            int k = 0;
+            foreach (var o in c) {
+                if ( ! typeList[k++].IsAssignableFrom(o.GetType()) )
+                    return false;
+            }
+            return true;
+        }
+
 
     }
 

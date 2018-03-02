@@ -5,10 +5,10 @@ using g3;
 
 namespace f3
 {
-    public class TransientXFormSO : TransformableSO, SOCollection
+    public class TransientXFormSO : SceneObject, SOCollection
     {
         GameObject gameObject;
-        TransformableSO target;
+        SceneObject target;
         protected SOParent parent;
         //TransformableSceneObject source;
 
@@ -27,7 +27,7 @@ namespace f3
             increment_timestamp();
         }
 
-        public void Connect(TransformableSO source, TransformableSO target)
+        public void ConnectTarget(SceneObject source, SceneObject target)
         {
             //this.source = source;
             this.target = target;
@@ -39,7 +39,7 @@ namespace f3
             increment_timestamp();
         }
 
-        public void Disconnect()
+        public void DisconnectTarget()
         {
             if ( target != null )
                 parentScene.ReparentSceneObject(target);
@@ -81,6 +81,13 @@ namespace f3
 
         virtual public int Timestamp {
             get { return _timestamp; }
+        }
+
+        virtual public void Connect(bool bRestore)
+        {
+        }
+        virtual public void Disconnect(bool bDestroying)
+        {
         }
 
         virtual public bool IsTemporary { 
@@ -193,7 +200,9 @@ namespace f3
 
         virtual public IEnumerable<SceneObject> GetChildren()
         {
-            return new List<SceneObject>() { target };
+            if ( target != null )
+                return new List<SceneObject>() { target };
+            return new List<SceneObject>();
         }
     }
 }

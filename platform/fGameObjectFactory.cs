@@ -23,6 +23,16 @@ namespace f3
         }
 
 
+        public static fGameObject CreateTrackingGO(string sName, fGameObject trackGO)
+        {
+            GameObject go = new GameObject(sName);
+            TrackObjectBehavior tracker = go.AddComponent<TrackObjectBehavior>();
+            tracker.TrackGO = trackGO;
+            return go;
+        }
+
+
+
         static void initialize_meshgo(GameObject go, fMesh mesh, bool bCollider, bool bShared)
         {
             go.AddComponent<MeshFilter>();
@@ -176,7 +186,17 @@ namespace f3
                 fgo.SetVertices(vVertices);
             return fgo;
         }
-
+        public static fPolylineGameObject CreatePolylineGO(string sName, List<Vector3f> vVertices, fMaterial material, bool bSharedMaterial, float fLineWidth, LineWidthType widthType)
+        {
+            GameObject go = new GameObject(sName);
+            CurveRendererImplementation curveRen = CurveRendererSource.Build(widthType);
+            curveRen.initialize(go, material, bSharedMaterial);
+            fPolylineGameObject fgo = new fPolylineGameObject(go, curveRen);
+            fgo.SetLineWidth(fLineWidth);
+            if (vVertices != null)
+                fgo.SetVertices(vVertices);
+            return fgo;
+        }
 
 
         public static fBoxGameObject CreateBoxGO(string sName, float fWidth, float fHeight, float fDepth, fMaterial material, bool bShareMaterial, bool bCollider)

@@ -10,12 +10,13 @@ namespace f3
     }
 
 
-    public interface ITool
+    public interface ITool : InputBehaviorSource
     {
         string Name { get; }
         string TypeIdentifier { get; }
 
-        InputBehaviorSet InputBehaviors { get; }
+        // inherited from from InputBehaviorSource
+        //InputBehaviorSet InputBehaviors { get; }
 
         // called on per-frame Update()
         void PreRender();
@@ -28,7 +29,8 @@ namespace f3
         // if false, cannot change selection while tool is active
         bool AllowSelectionChanges { get; }
 
-        void Shutdown();
+        void Setup();      // called right after constructor
+        void Shutdown();   // called right before deactivating
     }
 
 

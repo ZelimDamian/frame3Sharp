@@ -23,7 +23,8 @@ namespace f3
     /// </summary>
     public interface ITransformed
     {
-		Frame3f GetLocalFrame(CoordSpace eSpace);
+        fGameObject RootGameObject { get; }
+        Frame3f GetLocalFrame(CoordSpace eSpace);
         Vector3f GetLocalScale();
     }
 
@@ -54,10 +55,10 @@ namespace f3
     {
     }
 
+    public delegate void TransformChangedEventHandler(SceneObject so);
 
-	public interface SceneObject
-	{
-		fGameObject RootGameObject { get; }
+    public interface SceneObject : ITransformable
+    {
         SOParent Parent { get; set; }
 
         string UUID { get; }
@@ -70,10 +71,13 @@ namespace f3
 
         bool IsSurface { get; }         // does this object have a surface we can use (ie a mesh/etc)
 
-        bool IsSelectable { get; }      // cna this SO be selected. Some cannot (eg TransientGroupSO)
+        bool IsSelectable { get; }      // can this SO be selected. Some cannot (eg TransientGroupSO)
 
 		void SetScene(FScene s);
 		FScene GetScene();
+
+        void Connect(bool bRestore);          // called when SO is created or restored
+        void Disconnect(bool bDestroying);    // called when SO is marked as deleted, or destroyed
 
         SceneObject Duplicate();
 
@@ -93,15 +97,9 @@ namespace f3
 
         AxisAlignedBox3f GetTransformedBoundingBox();
         AxisAlignedBox3f GetLocalBoundingBox();
-	}
 
-
-    // should we just make scene object transformable??
-    public delegate void TransformChangedEventHandler(TransformableSO so);
-	public interface TransformableSO : SceneObject, ITransformable
-	{
         event TransformChangedEventHandler OnTransformModified;
-	}
+    }
 
 
 

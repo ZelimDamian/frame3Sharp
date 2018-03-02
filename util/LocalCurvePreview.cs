@@ -6,8 +6,8 @@ namespace f3
 {
     public class LocalCurvePreview : CurvePreview
     {
-        public TransformableSO Target;
-        int target_timestamp;
+        public SceneObject Target;
+        //int target_timestamp;
 
         struct LocalVertexRef
         {
@@ -16,11 +16,11 @@ namespace f3
         List<LocalVertexRef> SurfacePoints;
         
 
-        public LocalCurvePreview(TransformableSO targetSurf) : base()
+        public LocalCurvePreview(SceneObject targetSurf) : base()
         {
             Target = targetSurf;
             SurfacePoints = new List<LocalVertexRef>();
-            target_timestamp = Target.Timestamp;
+            //target_timestamp = Target.Timestamp;
         }
 
 
@@ -30,7 +30,7 @@ namespace f3
 
             // map v to local coords
             LocalVertexRef r = new LocalVertexRef();
-            r.localPos = SceneTransforms.SceneToObject(Target, v);
+            r.localPos = SceneTransforms.SceneToObjectP(Target, v);
             SurfacePoints.Add(r);
             if (Curve.VertexCount != SurfacePoints.Count)
                 throw new Exception("SurfaceCurvePreview: counts are out of sync!!");
@@ -39,14 +39,15 @@ namespace f3
 
         protected override void update_vertices(FScene s)
         {
+            // [RMS] this was commented out...doesn't work? something?
             //if (Target.Timestamp == target_timestamp)
             //    return;
 
-            target_timestamp = Target.Timestamp;
+            //target_timestamp = Target.Timestamp;
 
             for ( int i = 0; i < VertexCount; ++i ) {
                 LocalVertexRef r = SurfacePoints[i];
-                Vector3d vScene = SceneTransforms.ObjectToScene(Target, r.localPos);
+                Vector3d vScene = SceneTransforms.ObjectToSceneP(Target, r.localPos);
                 this[i] = vScene;
             }
 

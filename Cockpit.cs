@@ -32,8 +32,8 @@ namespace f3
         List<IShortcutKeyHandler> vKeyHandlers;
 
 
-        Dictionary<string, ILayout> Layouts;
-        ILayout defaultLayout;
+        Dictionary<string, ICockpitLayout> Layouts;
+        ICockpitLayout defaultLayout;
 
 
         public enum MovementMode
@@ -73,12 +73,12 @@ namespace f3
 			vUIElements = new List<SceneUIElement> ();
             UIElementLayer = FPlatform.HUDLayer;
 
-            Layouts = new Dictionary<string, ILayout>();
+            Layouts = new Dictionary<string, ICockpitLayout>();
             defaultLayout = null;
 
             vKeyHandlers = new List<IShortcutKeyHandler>();
-            InputBehaviors = new InputBehaviorSet();
-            OverrideBehaviors = new InputBehaviorSet();
+            InputBehaviors = new InputBehaviorSet() { DefaultSource = this };
+            OverrideBehaviors = new InputBehaviorSet() { DefaultSource = this };
             HUDAnimator = new GenericAnimator();
 
             TiltAngle = ShiftAngle = 0.0f;
@@ -151,43 +151,138 @@ namespace f3
         }
 
 
-        // get bounds of current orthographic camera view, in world coordinates (ie
-        // box.Min is bottom-left corner of screen and box.Max is top-right
-        // [TODO] move this elsewhere?? 
+        /*
+         * 2D UI sizing.
+         * 
+         */
+
+        public virtual void OnWindowResized()
+        {
+            if (use_constant_scale)
+                constant_size_update();
+        }
+
+        bool use_constant_scale = false;
+        Vector2f start_pixel_scale = Vector2f.One;
+        Vector2f cur_pixel_scale = Vector2f.One;
+        Vector2f const_scale = Vector2f.One;
+
+        /// <summary>
+        /// Call this to turn on constant-size 2D cockpit scaling. This is a bit tricky. 
+        /// The orthographic size of the camera stays at height=1, width = aspect*height, regardless
+        /// of the screen size. So, we have to keep track of the scaling between ortho and pixel dims.
+        /// Then if the window size changes, the relative x/y initial/cur scalings give us a scaling factor that
+        /// we can apply to the cockpit itself. This maintains fixed size, but the 2D view bounds will stay
+        /// fixed, unless we also scale them up - this is what GetConstantSizeOrthoViewBounds() is for.
+        /// 2D layout containers use this function and then the 2D box gets bigger/smaller with the screen size.
+        /// </summary>
+        public virtual void EnableConstantSize2DCockpit()
+        {
+            AxisAlignedBox2f uiBounds = GetOrthoViewBounds();
+            AxisAlignedBox2f pixelBounds = GetPixelViewBounds_DpiIndependent();
+            start_pixel_scale = new Vector2f(
+                uiBounds.Width / pixelBounds.Width,
+                uiBounds.Height / pixelBounds.Height);
+            use_constant_scale = true;
+        }
+
+        // updates cockpit scaling to maintain constant size - call in OnWindowResized()
+        protected virtual void constant_size_update()
+        {
+            AxisAlignedBox2f uiBounds = GetOrthoViewBounds();
+            AxisAlignedBox2f pixelBounds = GetPixelViewBounds_DpiIndependent();
+            cur_pixel_scale = new Vector2f(
+                uiBounds.Width / pixelBounds.Width,
+                uiBounds.Height / pixelBounds.Height);
+
+            const_scale = cur_pixel_scale / start_pixel_scale;
+            this.RootGameObject.SetLocalScale(new Vector3f(const_scale.x, const_scale.y, 1));
+        }
+
+
+        /// <summary>
+        ///  get bounds of current orthographic camera view, in world coordinates 
+        ///  (ie box.Min is bottom-left corner of screen and box.Max is top-right
+        /// </summary>
         public virtual AxisAlignedBox2f GetOrthoViewBounds()
         {
             if (context.OrthoUICamera == null)
                 return AxisAlignedBox2f.Empty;
             float verticalSize = context.OrthoUICamera.OrthoHeight;
-            float horizontalSize = verticalSize * (float)FPlatform.ScreenWidth / (float)FPlatform.ScreenHeight;
+            float aspect = (float)FPlatform.ScreenWidth / (float)FPlatform.ScreenHeight;
+            float horizontalSize = verticalSize * aspect;
             return new AxisAlignedBox2f(-horizontalSize / 2, -verticalSize / 2, horizontalSize / 2, verticalSize / 2);
         }
 
-        public virtual AxisAlignedBox2f GetPixelViewBounds()
+        /// <summary>
+        /// GetOrthoViewBounds() inverse scaled by constant-size scaling factor,
+        /// so corners stay at corners of screen as cockpit is scaled
+        /// </summary>
+        public virtual AxisAlignedBox2f GetConstantSizeOrthoViewBounds()
+        {
+            AxisAlignedBox2f bounds = GetOrthoViewBounds();
+            return new AxisAlignedBox2f(bounds.Center, bounds.Width * 0.5f / const_scale.x, bounds.Height * 0.5f / const_scale.y);
+        }
+
+        /// <summary>
+        /// Pixel bounding box of 2D ortho viewport
+        /// </summary>
+        public virtual AxisAlignedBox2f GetPixelViewBounds_Absolute()
         {
             if (context.OrthoUICamera == null)
                 return AxisAlignedBox2f.Empty;
             return new AxisAlignedBox2f(0, 0, FPlatform.ScreenWidth, FPlatform.ScreenHeight);
         }
 
-        public float GetPixelScale()
+        /// <summary>
+        /// DPI-normalized "Pixel" bounding-box of 2D ortho viewport, 
+        /// (ie bounds will change depending on dpi)
+        /// </summary>
+        public virtual AxisAlignedBox2f GetPixelViewBounds_DpiIndependent()
+        {
+            if (context.OrthoUICamera == null)
+                return AxisAlignedBox2f.Empty;
+            float dpi_scale = GetDpiIndependentScale();
+            return new AxisAlignedBox2f(0, 0, FPlatform.ScreenWidth*dpi_scale, FPlatform.ScreenHeight*dpi_scale);
+        }
+
+        /// <summary>
+        /// scaling factor that normalizes for screen DPI (default is 96 DPI)
+        /// </summary>
+        public virtual float GetDpiIndependentScale() {
+            return 96.0f / FPlatform.ScreenDPI;
+        }
+
+        /// <summary>
+        /// Returns dpi-independent pixel scaling factor. Mainly intended to be used
+        /// for sizing UI elements. 
+        /// This function multiplies by FPlatform.PixelScaleFactor.
+        /// </summary>
+        public float GetPixelScale(bool bDpiIndependent = true)
         {
             AxisAlignedBox2f uiBounds = GetOrthoViewBounds();
-            AxisAlignedBox2f pixelBounds = GetPixelViewBounds();
-            float fScale = uiBounds.MaxDim / pixelBounds.MaxDim;
-#if UNITY_STANDALONE_OSX
-            if ( UnityEngine.Screen.dpi > 100.0f && FPlatform.InUnityEditor() == false )
-                fScale /= 2.0f;
-#endif
-#if UNITY_IOS || UNITY_ANDROID
-            if (FPlatform.GetDeviceType() != FPlatform.fDeviceType.IPad )
-                fScale *= 0.8f;
-#endif
+            AxisAlignedBox2f pixelBounds =
+                (bDpiIndependent) ? GetPixelViewBounds_DpiIndependent() : GetPixelViewBounds_Absolute();
+            float fScale = uiBounds.Height / pixelBounds.Height;
+
+            // use ValidScreenDimensionRange to manipulate scale here?
+
             if (FPlatform.InUnityEditor())
-                fScale *= FPlatform.EditorUIScaleFactor;
+                fScale *= FPlatform.EditorPixelScaleFactor;
             else
-                fScale *= FPlatform.UIScaleFactor;
+                fScale *= FPlatform.PixelScaleFactor;
             return fScale;
+        }
+
+
+        /// <summary>
+        /// If cockpit is scaled (ie to maintain constant-pixel-size elements), 
+        /// then we need a way to get 'scaled' dimensions of things 
+        /// (what about positions...?)
+        /// </summary>
+        public Vector2f GetScaledDimensions(Vector2f v)
+        {
+            return v * const_scale;
         }
 
 
@@ -200,13 +295,6 @@ namespace f3
             onCameraGO = GameObjectFactory.CreateParentGO("cockpit_camera");
             gameobject.AddChild(onCameraGO, false);
 
-            // [RMS] probably can delete this code now?
-            //gameobject = GameObject.CreatePrimitive (PrimitiveType.Plane);
-			//gameobject.SetName("cockpit");
-			//MeshRenderer ren = gameobject.GetComponent<MeshRenderer> ();
-			//ren.enabled = false;
-			//gameobject.GetComponent<MeshCollider> ().enabled = false;
-
             // add hud animation controller
             gameobject.AddComponent<UnityPerFrameAnimationBehavior>().Animator = HUDAnimator;                
 
@@ -214,9 +302,10 @@ namespace f3
             try {
                 setup.Initialize(this);
             } catch ( Exception e ) {
-                DebugUtil.Log(2, "[Cockpit.Start] exception in initializer: {0}\nTrace:\n{1}", e.Message,
-                    e.StackTrace);
                 // if hud setup fails we still want to keep going
+                DebugUtil.Log(2, "[Cockpit.Start] exception in initializer: {0}\nTrace:\n{1}", e.Message, e.StackTrace);
+                if (FPlatform.InUnityEditor())
+                    throw;
             }
 
             // position in front of camera
@@ -332,7 +421,7 @@ namespace f3
         /// <summary>
         /// Register a layout
         /// </summary>
-        public void AddLayout(ILayout e, string name, bool bSetAsDefault = false)
+        public void AddLayout(ICockpitLayout e, string name, bool bSetAsDefault = false)
         {
             if (Layouts.ContainsKey(name))
                 throw new Exception("Cockpit.AddLayout: tried to register duplicate name " + name);
@@ -349,7 +438,7 @@ namespace f3
 
         public void SetDefaultLayout(string name)
         {
-            ILayout setdefault = null;
+            ICockpitLayout setdefault = null;
             if (Layouts.TryGetValue(name, out setdefault) == false)
                 throw new Exception("Cockpit.SetDefaultLayout: could not find layout named " + name);
             defaultLayout = setdefault;
@@ -363,7 +452,7 @@ namespace f3
         /// </summary>
         public void RemoveLayout(string name, bool bRemoveAllElements = true)
         {
-            ILayout remove = null;
+            ICockpitLayout remove = null;
             if (Layouts.TryGetValue(name, out remove) == false)
                 throw new Exception("Cockpit.RemoveLayout: could not find layout named " + name);
 
@@ -382,7 +471,7 @@ namespace f3
         /// <summary>
         /// get default Layout
         /// </summary>
-        public ILayout DefaultLayout
+        public ICockpitLayout DefaultLayout
         {
             get { return defaultLayout; }
         }
@@ -390,10 +479,10 @@ namespace f3
         /// <summary>
         /// Find Layout with given name, or default layout if no argument
         /// </summary>
-        public ILayout Layout(string name = "") {
+        public ICockpitLayout Layout(string name = "") {
             if (name == "")
                 return defaultLayout;
-            ILayout r = null;
+            ICockpitLayout r = null;
             if (Layouts.TryGetValue(name, out r) == false)
                 throw new Exception("Cockpit.Layout: could not find layout named " + name);
             return r;
@@ -414,6 +503,9 @@ namespace f3
 
         public bool HandleShortcutKeys()
         {
+            if (FPlatformUI.IsConsumingMouseInput())
+                return false;
+
             foreach ( IShortcutKeyHandler h in vKeyHandlers ) {
                 if (h.HandleShortcuts())
                     return true;

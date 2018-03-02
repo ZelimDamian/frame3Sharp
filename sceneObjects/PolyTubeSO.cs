@@ -15,7 +15,7 @@ namespace f3
         public Polygon2d Polygon
         {
             get { return polygon; }
-            set { polygon = value; invalidate_geometry(); }
+            set { polygon = value; on_set_curve(); }
         }
 
         // [RMS] see notes in PrimitiveSO
@@ -58,7 +58,7 @@ namespace f3
         }
 
 
-        override protected void Create_internal(Material useMaterial)
+        override protected void Create_internal(fMaterial useMaterial)
         {
             if (polygon == null) {
                 polygon = Polygon2d.MakeCircle(0.3f, 8);

@@ -45,7 +45,6 @@ namespace f3
 
 
 
-        public enum HorizontalAlignment { Left, Center, Right }
         public HorizontalAlignment AlignmentHorz { get; set; }
 
         string text;
@@ -64,7 +63,37 @@ namespace f3
             TextColor = Colorf.VideoBlack;
             DisabledTextColor = Colorf.DimGrey;
             AlignmentHorz = HorizontalAlignment.Left;
-            text = "(entry)";
+            text = "(default)";
+        }
+
+
+        public HUDLabel(float width, float height, ITextElementStyle textStyle) 
+        {
+            Shape = new HUDShape(HUDShapeType.Rectangle, width, height);
+            BackgroundColor = Colorf.TransparentBlack;
+            BorderWidth = 0;
+            BorderColor = Colorf.TransparentBlack;
+            EnableBorder = false;
+
+            TextHeight = textStyle.TextHeight;
+            TextColor = textStyle.TextColor;
+            AlignmentHorz = textStyle.AlignmentHorz;
+            text = "(default)";
+        }
+
+
+        public HUDLabel(IContentBoxStyle boxStyle, ITextElementStyle textStyle)
+        {
+            Shape = boxStyle.ShapeF(boxStyle.Width, boxStyle.Height);
+            BackgroundColor = boxStyle.BackgroundColor;
+            BorderWidth = boxStyle.BorderWidth;
+            BorderColor = boxStyle.BorderColor;
+            EnableBorder = (boxStyle.BorderWidth != 0);
+
+            TextHeight = textStyle.TextHeight;
+            TextColor = textStyle.TextColor;
+            AlignmentHorz = textStyle.AlignmentHorz;
+            text = "(default)";
         }
 
 
@@ -100,10 +129,15 @@ namespace f3
                 GameObjectFactory.CreateTextMeshGO(
                 "text", Text, TextColor, TextHeight, horzAlign, SceneGraphConfig.TextLabelZOffset );
 
+            textMesh.TextObject.SetFixedWidth(Shape.Width);
+            textMesh.TextObject.SetOverflowMode(TextOverflowMode.Ellipses);
+
             Vector2f toPos = BoxModel.GetBoxPosition(this, horzAlign);
             BoxModel.Translate(textMesh, Vector2f.Zero, toPos);
 
             AppendNewGO(textMesh, entry, false);
+
+            MaterialUtil.DisableShadows(RootGameObject);
         }
 
         void UpdateText()
@@ -162,6 +196,11 @@ namespace f3
 
         override public bool EndCapture(InputEvent e)
         {
+            if ( Parent == null ) {
+                DebugUtil.Log(2, "HUDLabel.EndCapture: our parent went invalid while we were capturing!");
+                return true;
+            }
+
             if (FindHitGO(e.ray)) {
 
                 if (sent_click == false) {

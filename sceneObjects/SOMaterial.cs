@@ -18,6 +18,8 @@ namespace f3
             PerVertexColor,
             TextureMap,
             UnlitRGBColor,
+            DepthWriteOnly,
+            FlatShadedPerVertexColor,
 
             Custom
         };
@@ -29,11 +31,50 @@ namespace f3
         public virtual Texture2D MainTexture { get; set; }
 
 
+        public enum CullingModes
+        {
+            None = 0,
+            FrontFace = 1,
+            BackFace = 2
+        }
+
+        /// <summary>
+        /// Backface culling mode.
+        /// Currently only supported on PerVertexColor and FlatShadedPerVertexColor types!
+        /// </summary>
+        public CullingModes CullingMode { get; set; }
+
+        /// <summary>
+        /// Integer value added to Unity Material.renderQueue 
+        /// Can use to nudge objects up/down in rendering order (sometimes helps w/ transparency)
+        /// </summary>
+        public virtual int RenderQueueShift { get; set; }
+
+
+        /// <summary>
+        /// This function will be called when instantiating the SOMaterial as the platform-specific
+        /// material type (eg in unity, called when generating a UnityEngine.Material)
+        /// In Unity, the object will be a UnityEngine.Material
+        /// </summary>
+        public Action<object> MaterialCustomizerF = null;
+
+
+        [Flags]
+        public enum HintFlags
+        {
+            None = 0,
+            UseTransparentPass = 1
+        }
+        public HintFlags Hints { get; set; }
+
+
         public SOMaterial()
         {
             Name = UniqueNames.GetNext("SOMaterial");
             Type = MaterialType.StandardRGBColor;
             RGBColor = Colorf.VideoWhite;
+            CullingMode = CullingModes.None;
+            Hints = HintFlags.None;
         }
 
         // in some subclasses we don't want to do default constructor...
@@ -44,7 +85,9 @@ namespace f3
         public virtual SOMaterial Clone() {
             return new SOMaterial() {
                 Name = this.Name, Type = this.Type,
-                RGBColor = this.RGBColor, MainTexture = this.MainTexture
+                RGBColor = this.RGBColor, MainTexture = this.MainTexture,
+                CullingMode = this.CullingMode, RenderQueueShift = this.RenderQueueShift,
+                Hints = this.Hints
             };
         }
 
@@ -69,6 +112,7 @@ namespace f3
             copy.Name += "_Tr";
             copy.Type = MaterialType.TransparentRGBColor;
             copy.RGBColor = new Colorf(copy.RGBColor, fAlpha);
+            copy.CullingMode = CullingModes.BackFace;
             return copy;
         }
 

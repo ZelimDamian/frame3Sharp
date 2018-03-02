@@ -9,6 +9,9 @@ namespace f3
     /// <summary>
     /// Basic popup message box. 
     /// Note that most fields must be configured before calling Create()
+    /// 
+    /// TODO: refactor this to be based on HUDPanel, like HUDPopupDialog
+    /// 
     /// </summary>
     public class HUDPopupMessage : HUDStandardItem, IBoxModelElement
     {
@@ -136,6 +139,11 @@ namespace f3
         }
 
 
+        public void Dismiss()
+        {
+            FUtil.SafeSendEvent(OnDismissed, this, new EventArgs());
+        }
+
 
         void UpdateText()
         {
@@ -194,7 +202,7 @@ namespace f3
         {
             if (FindHitGO(e.ray)) {
                 if (EnableClickToDismiss) {
-                    FUtil.SafeSendEvent(OnDismissed, this, new EventArgs());
+                    Dismiss();
                 } else {
                     // send single-click and reset timer
                     FUtil.SafeSendEvent(OnClicked, this, new EventArgs());

@@ -54,6 +54,15 @@ namespace f3
         }
 
 
+        public IToolBuilder FindToolTypeBuilder(string sType)
+        {
+            if (ToolTypes.ContainsKey(sType) == false)
+                return null;
+            return ToolTypes[sType];
+        }
+
+
+
 
         public ITool ActiveLeftTool {
             get { return activeTool[0]; }
@@ -147,6 +156,7 @@ namespace f3
             }
 
             if (activeTool[nSide] != null) {
+                activeTool[nSide].Setup();
                 SendOnToolActivationChanged(activeTool[nSide], eSide, true);
                 return true;
             } else
@@ -167,6 +177,13 @@ namespace f3
                 activeTool[nSide] = null;
                 SendOnToolActivationChanged(tool, eSide, false);
             }
+        }
+        public void DeactivateTools()
+        {
+            if (activeTool[0] != null)
+                DeactivateTool(0);
+            if (activeTool[1] != null)
+                DeactivateTool(1);
         }
 
 
