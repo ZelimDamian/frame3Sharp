@@ -12,7 +12,7 @@ namespace f3
 
         public void Update()
         {
-            Animator.NextFrame();
+            Animator?.NextFrame();
         }
     }
 }

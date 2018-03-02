@@ -1,8 +1,5 @@
 ﻿using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using UnityEngine;
 using DG.Tweening;
 using g3;
@@ -47,9 +44,9 @@ namespace f3
             Vector3f delta = curPos - newPos;
 
             StartCoroutine(
-                SmoothTranslate(UseScene.RootGameObject.GetPosition() + delta, 0.5f));
+                SmoothTranslate(UseScene.RootGameObject.GetPosition() + delta, 0.075f));
             StartCoroutine(
-                SmoothMoveTarget(v+delta, 0.1f));
+                SmoothMoveTarget(v+delta, 0.05f));
         }
 
 
