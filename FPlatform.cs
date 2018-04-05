@@ -295,7 +295,7 @@ namespace f3
         {
             ShowingExternalPopup = true;
 
-#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX)
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_EDITOR)
             // tinyfd changes CWD (?), and this makes Unity unhappy
             string curDirectory = Directory.GetCurrentDirectory();
 
@@ -335,7 +335,7 @@ namespace f3
         {
             ShowingExternalPopup = true;
 
-#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX)
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_EDITOR)
             // tinyfd changes CWD (?), and this makes Unity unhappy
             string curDirectory = Directory.GetCurrentDirectory();
 
@@ -370,7 +370,7 @@ namespace f3
         [DllImport("user32.dll")]
         private static extern System.IntPtr GetActiveWindow();
 #endif
-#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX)
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_EDITOR)
 
         // NOTE: tinyfiledialogs is compiled with a flag that means it should output UTF8.
         // However, seems like it only works if I interpret result with Marshal.PtrToStringAnsi()... ??
