@@ -74,7 +74,7 @@ namespace f3
             int NV = source_vertices.Length;
             Vector3[] vertices = new Vector3[NV];
             for ( int i = 0; i < NV; ++i ) {
-                vertices[i] = (Vector3)source.GetVertex(source_vertices[i]);
+                vertices[i] = (Vector3)source.GetVertexUnsafe(source_vertices[i]);
             }
 
             mesh.vertices = vertices;
