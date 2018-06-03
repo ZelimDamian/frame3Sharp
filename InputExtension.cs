@@ -282,12 +282,12 @@ namespace f3
         // call this from a MonoBehavior Update before you use the Input extension methods
         public void Update()
         {
-            GamepadLeft.Update();
-            GamepadRight.Update();
-            SpatialLeftTrigger.Update();
-            SpatialRightTrigger.Update();
-            SpatialLeftShoulder.Update();
-            SpatialRightShoulder.Update();
+            GamepadLeft?.Update();
+            GamepadRight?.Update();
+            SpatialLeftTrigger?.Update();
+            SpatialRightTrigger?.Update();
+            SpatialLeftShoulder?.Update();
+            SpatialRightShoulder?.Update();
         }
 
 
