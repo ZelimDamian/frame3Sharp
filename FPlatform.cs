@@ -321,6 +321,35 @@ namespace f3
         }
 
 
+        /// <summary>
+        /// </summary>
+        static public string GetOpenDirectoryName(string sDialogTitle, string sInitialPathAndFile)
+        {
+            ShowingExternalPopup = true;
+
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_EDITOR)
+            // tinyfd changes CWD (?), and this makes Unity unhappy
+            string curDirectory = Directory.GetCurrentDirectory();
+
+            IntPtr p = tinyfd_selectFolderDialog(sDialogTitle, sInitialPathAndFile);
+
+            ShowingExternalPopup = false;
+            try {
+                Directory.SetCurrentDirectory(curDirectory);
+            } catch (Exception) {
+                // [RMS] sometimes this results in an exception? I am confused...
+            }
+
+            if (p == IntPtr.Zero)
+                return null;
+
+            string s = stringFromChar(p);
+            return s;
+#else
+            // [TODO] implement
+            return null;
+#endif
+        }
 
 
         /// <summary>
@@ -387,6 +416,9 @@ namespace f3
         public static extern IntPtr tinyfd_saveFileDialog(string aTitle, string aDefaultPathAndFile, int aNumOfFilterPatterns, string[] aFilterPatterns, string aSingleFilterDescription);
         //IntPtr p = tinyfd_openFileDialog("select a mesh file", "c:\\scratch\\default.stl", 2, new string[] { "*.stl", "*.obj" }, "mesh files", 0);
 
+        [DllImport("tinyfiledialogs", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr tinyfd_selectFolderDialog(string aTitle, string aDefaultPathAndFile);
+        
 #endif
 
 
