@@ -240,7 +240,7 @@ namespace f3 {
             InputExtension.Get.Update();
 
             // update cockpit tracking and let UI do per-frame rendering computations
-            if (options.EnableCockpit) 
+            if (options?.EnableCockpit ?? true) 
                 ActiveCockpit.Update();
 
             // run per-frame actions
@@ -273,7 +273,7 @@ namespace f3 {
             }
 
             // after we have handled input, do per-frame rendering computations
-            if (options.EnableCockpit)
+            if (options?.EnableCockpit ?? true)
                 ActiveCockpit.PreRender();
             ToolManager.PreRender();
             Scene.PreRender();
@@ -944,7 +944,7 @@ namespace f3 {
                 throw new Exception("FContext.Find2DUIHit: 2D UI layer is not enabled!");
 
             bestHit = null;
-            if (options.EnableCockpit)
+            if (options?.EnableCockpit ?? true)
                 return activeCockpit.FindUIRayIntersection(orthoEyeRay, out bestHit);
             return false;
         }
@@ -957,7 +957,7 @@ namespace f3 {
                 throw new Exception("FContext.Find2DUIHit: 2D UI layer is not enabled!");
 
             bestHit = null;
-            if (options.EnableCockpit)
+            if (options?.EnableCockpit ?? true)
                 return activeCockpit.FindUIHoverRayIntersection(orthoEyeRay, out bestHit);
             return false;
         }
