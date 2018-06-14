@@ -29,7 +29,8 @@ namespace f3
             meshGO = new GameObject("mesh");
             meshGO.AddComponent<MeshFilter>();
             meshGO.SetMesh(mesh);
-            meshGO.AddComponent<MeshCollider>().enabled = false;
+            meshGO.AddComponent<MeshCollider>();
+            meshGO.DisableCollider();
             meshGO.AddComponent<MeshRenderer>().material = CurrentMaterial;
 
             AppendNewGO(meshGO, (GameObject)parentGO, true);
@@ -88,8 +89,6 @@ namespace f3
         override public AxisAlignedBox3f GetLocalBoundingBox()
         {
             AxisAlignedBox3f b = (AxisAlignedBox3f)meshGO.GetSharedMesh().bounds;
-            Vector3f scale = parentGO.GetLocalScale();
-            b.Scale(scale.x, scale.y, scale.z);
             return b;
         }
 

@@ -150,7 +150,7 @@ namespace f3
         /// </summary>
         public OpStatus PushChange(IChangeOp op, bool bIsApplied = false)
         {
-            DebugUtil.Log(2, "ChangeHistory.PushChange [{0}]: pushed {1}", iCurrent+1, op.Identifier());
+            DebugUtil.Log(4, "ChangeHistory.PushChange [{0}]: pushed {1}", iCurrent+1, op.Identifier());
 
             if (vHistory.Count > 0 && iCurrent < vHistory.Count)
                 TrimFuture();
@@ -204,7 +204,7 @@ namespace f3
                 return OpStatus.Success;        // weird but ok
 
             IChangeOp op = vHistory[iCurrent - 1];
-            DebugUtil.Log(2, "ChangeHistory.StepBack [{0}/{1}]: reverting {2}", iCurrent-1, vHistory.Count, op.Identifier());
+            DebugUtil.Log(4, "ChangeHistory.StepBack [{0}/{1}]: reverting {2}", iCurrent-1, vHistory.Count, op.Identifier());
             OpStatus result = op.Revert();
             if (result.code != OpStatus.no_error) {
                 DebugUtil.Error("[ChangeHistory::StepBack] Revert() of ChangeOp {0} failed - result was code {1} message {2}",
@@ -257,7 +257,7 @@ namespace f3
                 return OpStatus.Success;
 
             IChangeOp op = vHistory[iCurrent];
-            DebugUtil.Log(2, "ChangeHistory.StepForward [{0}/{1}]: applying {2}", iCurrent, vHistory.Count, op.Identifier());
+            DebugUtil.Log(4, "ChangeHistory.StepForward [{0}/{1}]: applying {2}", iCurrent, vHistory.Count, op.Identifier());
             OpStatus result = op.Apply();
             if (result.code != OpStatus.no_error) {
                 DebugUtil.Error("[ChangeHistory::StepForward] Apply() of ChangeOp {0} failed - result was code {1} message {2}",
@@ -275,6 +275,7 @@ namespace f3
         public OpStatus StepForwardToAfterNextTag(string tag)
         {
             bool bContinue = true;
+            bool bFound = false;
             while (bContinue) {
                 OpStatus result = StepForward();
                 if (result.code != OpStatus.no_error)
@@ -283,10 +284,16 @@ namespace f3
                     bContinue = false;
                 } else {
                     IChangeOp op = vHistory[iCurrent];
-                    if (op.HasTags && op.Tags.Contains(tag))
+                    if (op.HasTags && op.Tags.Contains(tag)) {
                         bContinue = false;
+                        bFound = true;
+                    }
                 }
             }
+            // step to *after* this node, otherwise if we push a new node we will replace this one!
+            // [TODO] this is maybe a bit weird...?
+            if (bFound)
+                StepForward();
             return OpStatus.Success;
         }
 
@@ -340,6 +347,16 @@ namespace f3
 
 
 
+        public void Clear()
+        {
+            for (int i = 0; i < vHistory.Count; ++i)
+                vHistory[i].Cull();
+            vHistory = new List<IChangeOp>();
+            iCurrent = 0;
+            FPlatform.SuggestGarbageCollection();
+        }
+
+
 
 
         public void DebugPrint(string prefix = "HISTORY")
@@ -359,7 +376,7 @@ namespace f3
                 s.AppendLine(string.Format("{0}[{1}] - {2} - tags: {3}", current, vHistory.Count-1-i, vHistory[i].Identifier(), tags));
             }
 
-            DebugUtil.Log(2, s.ToString());
+            DebugUtil.Log(1, s.ToString());
         }
 
 

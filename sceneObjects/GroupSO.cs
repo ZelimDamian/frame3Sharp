@@ -280,12 +280,30 @@ namespace f3
         }
 
 
-        virtual public AxisAlignedBox3f GetTransformedBoundingBox() {
-            return UnityUtil.GetBoundingBox(RootGameObject);
-        }
-        virtual public AxisAlignedBox3f GetLocalBoundingBox() {
-            return SceneUtil.GetLocalBoundingBox(vChildren);
 
+        virtual public Box3f GetBoundingBox(CoordSpace eSpace)
+        {
+            Box3f box = new Box3f(GetLocalBoundingBox());
+            if (eSpace == CoordSpace.ObjectCoords) {
+                return box;
+            } else if (eSpace == CoordSpace.SceneCoords) {
+                return SceneTransforms.ObjectToScene(this, box);
+            } else {
+                box = SceneTransforms.ObjectToScene(this, box);
+                return GetScene().ToWorldBox(box);
+            }
+        }
+
+        virtual public AxisAlignedBox3f GetLocalBoundingBox() {
+            if (vChildren.Count == 0)
+                return new AxisAlignedBox3f(Vector3f.Zero, 0.5f);
+            Box3d combine = vChildren[0].GetBoundingBox(CoordSpace.SceneCoords);
+            for (int k = 1; k < vChildren.Count; ++k) {
+                Box3d childbox = vChildren[k].GetBoundingBox(CoordSpace.SceneCoords);
+                combine = Box3d.Merge(ref combine, ref childbox);
+            }
+            Box3f boxLocal = SceneTransforms.SceneToObject(this, (Box3f)combine);
+            return boxLocal.ToAABB();
         }
 
         public bool FindRayIntersection(Ray3f ray, out SORayHit hit)
@@ -320,7 +338,12 @@ namespace f3
 
         virtual public bool SupportsScaling
         {
-            get { return true; }
+            get {
+                foreach (var so in vChildren)
+                    if (so.SupportsScaling == false)
+                        return false;
+                return true;
+            }
         }
         virtual public Vector3f GetLocalScale()
         {

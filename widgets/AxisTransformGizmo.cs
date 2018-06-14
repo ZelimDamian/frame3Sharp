@@ -1,5 +1,4 @@
 ﻿using System;
-using UnityEngine;
 using System.Collections.Generic;
 using g3;
 
@@ -10,13 +9,33 @@ namespace f3
 
     public class AxisTransformGizmoBuilder : ITransformGizmoBuilder
     {
-        public bool SupportsMultipleObjects { get { return true; } }
+        public virtual bool SupportsMultipleObjects { get { return true; } }
+        public IAxisGizmoWidgetFactory Factory = null;
 
-        public ITransformGizmo Build(FScene scene, List<SceneObject> targets)
+        public float TranslateSpeed = 1.0f;
+        public float ScaleSpeed = 1.0f;
+        public bool DynamicVisibilityFiltering = true;
+        public bool EnableRotationSnapping = true;
+        public float RotationSnapStepSizeDeg = 5.0f;
+        public float GizmoVisualDegrees = 0.0f;     // ignored unless non-zero
+        public int GizmoLayer = -1;                 // ignored unless >= 0
+
+        public virtual ITransformGizmo Build(FScene scene, List<SceneObject> targets)
         {
-            var g = new AxisTransformGizmo();
+            var g = create_gizmo();
+            g.ScaleSpeed = this.ScaleSpeed;
+            g.TranslateSpeed = this.TranslateSpeed;
+            g.DynamicVisibilityFiltering = this.DynamicVisibilityFiltering;
+            g.EnableRotationSnapping = this.EnableRotationSnapping;
+            g.RotationSnapStepSizeDeg = this.RotationSnapStepSizeDeg;
+            g.GizmoVisualDegrees = this.GizmoVisualDegrees;
+            g.GizmoLayer = this.GizmoLayer;
             g.Create(scene, targets);
             return g;
+        }
+
+        protected virtual AxisTransformGizmo create_gizmo() {
+            return new AxisTransformGizmo(Factory);
         }
     }
 
@@ -43,17 +62,57 @@ namespace f3
     }
 
 
+
+    public interface IAxisGizmoWidgetFactory
+    {
+        bool Supports(AxisGizmoFlags widget);
+
+        bool UniqueColorPerWidget { get; }
+        fMaterial MakeMaterial(AxisGizmoFlags widget);
+        fMaterial MakeHoverMaterial(AxisGizmoFlags widget);
+
+        fMesh MakeGeometry(AxisGizmoFlags widget); 
+    }
+
+
+
+    public abstract class Standard3DTransformWidget : Standard3DWidget
+    {
+        protected float gizmoInitialRadius = 1.0f;
+        public virtual void SetGizmoInitialRadius(float gizmoRadius) {
+            this.gizmoInitialRadius = gizmoRadius;
+        }
+
+        protected float gizmoRadiusW = 1.0f;
+        public virtual void UpdateGizmoWorldSize(float gizmoRadiusW) {
+            this.gizmoRadiusW = gizmoRadiusW;
+        }
+
+        public abstract bool CheckVisibility(ref Frame3f curFrameW, ref Vector3d eyePosW);
+    }
+
+
+    /// <summary>
+    /// 3D transformation gizmo
+    ///    - axis translate and rotate
+    ///    - planar translate
+    ///    - uniform scale
+    ///    
+    /// [TODO] 
+    /// </summary>
     public class AxisTransformGizmo : GameObjectSet, ITransformGizmo
     {
         public static readonly string DefaultName = "axis_transform";
 
+        public IAxisGizmoWidgetFactory Factory;
 
-		fGameObject gizmo;
+        fGameObject root;
 		fGameObject translate_x, translate_y, translate_z;
 		fGameObject rotate_x, rotate_y, rotate_z;
 		fGameObject translate_xy, translate_xz, translate_yz;
         fGameObject uniform_scale;
-        Bounds gizmoGeomBounds;
+        AxisAlignedBox3f gizmoGeomBounds;
+        float initialGizmoRadius;
 
         TransientGroupSO internalGroupSO;
 
@@ -65,15 +124,12 @@ namespace f3
         List<SceneObject> targets;
 		ITransformWrapper targetWrapper;
 
-		Dictionary<GameObject, Standard3DWidget> Widgets;
-        Standard3DWidget activeWidget;
-        Standard3DWidget hoverWidget;
+		Dictionary<fGameObject, Standard3DTransformWidget> Widgets;
+        List<fGameObject> enabledWidgetGOs = new List<fGameObject>();
+        Standard3DTransformWidget activeWidget;
+        Standard3DTransformWidget hoverWidget;
 
         bool is_interactive = true;
-
-        Material xMaterial, yMaterial, zMaterial;
-        Material xHoverMaterial, yHoverMaterial, zHoverMaterial;
-        Material allMaterial, allHoverMaterial;
 
 		FrameType eCurrentFrameMode;
 		public FrameType CurrentFrameMode {
@@ -92,18 +148,29 @@ namespace f3
             set { eEnabledWidgets = value; update_active(); }
         }
 
+        public float ScaleSpeed = 1.0f;
+        public float TranslateSpeed = 1.0f;
+        public bool DynamicVisibilityFiltering = true;
+        public bool EnableRotationSnapping = true;
+        public float RotationSnapStepSizeDeg = 5.0f;
+        public float GizmoVisualDegrees = 0.0f;        // if 0, we use SceneGraphConfig.DefaultAxisGizmoVisualDegrees
+        public int GizmoLayer = -1;                    // if -1, we use FPlatform.WidgetOverlayLayer
+
+        // if false, transform changes will not be emitted
+        public bool EmitChanges = true;
 
         //bool EnableDebugLogging;
 
-        public AxisTransformGizmo ()
+        public AxisTransformGizmo(IAxisGizmoWidgetFactory widgetFactory = null)
 		{
-			Widgets = new Dictionary<GameObject, Standard3DWidget> ();
-			//EnableDebugLogging = false;
-		}
+			Widgets = new Dictionary<fGameObject, Standard3DTransformWidget> ();
+            Factory = (widgetFactory != null) ? widgetFactory : new DefaultAxisGizmoWidgetFactory();
+            //EnableDebugLogging = false;
+        }
         ~AxisTransformGizmo()
         {
-            Debug.Assert(internalGroupSO == null);
-            Debug.Assert(internalXFormSO == null);
+            Util.gDevAssert(internalGroupSO == null);
+            Util.gDevAssert(internalXFormSO == null);
         }
 
 
@@ -122,12 +189,12 @@ namespace f3
 
 
 		public fGameObject RootGameObject {
-			get { return gizmo; }
+			get { return root; }
 		}
         public List<SceneObject> Targets
         {
             get { return targets; }
-            set { Debug.Assert(false, "not implemented!"); }
+            set { Util.gDevAssert(false, "not implemented!"); }
         }
         public FScene Scene {
             get { return parentScene; }
@@ -151,6 +218,9 @@ namespace f3
             // changes. in that case we need to terminate gracefully.
             if (activeWidget != null)
                 EndCapture(null);
+            foreach (var w in Widgets)
+                w.Value.Disconnect();
+            Widgets.Clear();
 
             if (targetWrapper != null)
                 targetWrapper.Target.OnTransformModified -= onTransformModified;
@@ -183,116 +253,81 @@ namespace f3
             set { is_interactive = value; }
         }
 
-        // [TODO] why isn't this in GameObjectSet?
         virtual public void SetLayer(int nLayer) {
-            foreach (var go in GameObjects)
-                go.SetLayer(nLayer);
+            SetAllGOLayer(nLayer);
         }
 
 
         // called on per-frame Update()
         virtual public void PreRender() {
-            gizmo.Show();
+            root.Show();
 
-            float fScaling = VRUtil.GetVRRadiusForVisualAngle(
-               gizmo.GetPosition(),
+            float useDegrees = (GizmoVisualDegrees > 0) ? GizmoVisualDegrees : SceneGraphConfig.DefaultAxisGizmoVisualDegrees;
+            float fWorldSize = VRUtil.GetVRRadiusForVisualAngle(
+               root.GetPosition(),
                parentScene.ActiveCamera.GetPosition(),
-               SceneGraphConfig.DefaultAxisGizmoVisualDegrees);
-            fScaling /= parentScene.GetSceneScale();
-            float fGeomDim = gizmoGeomBounds.size.magnitude;
-            fScaling /= fGeomDim;
-            gizmo.SetLocalScale( new Vector3f(fScaling) );
+               useDegrees);
+            float fSceneSize = fWorldSize / parentScene.GetSceneScale();
+            float fGeomScale = fSceneSize / initialGizmoRadius;
+            root.SetLocalScale( new Vector3f(fGeomScale) );
+
+            foreach (var widget in Widgets)
+                widget.Value.UpdateGizmoWorldSize(fWorldSize);
+
+            if (DynamicVisibilityFiltering && targetWrapper != null) {
+                Frame3f frameW = targetWrapper.GetLocalFrame(CoordSpace.WorldCoords);
+                Vector3d camPosW = parentScene.ActiveCamera.GetPosition();
+                foreach (var go in enabledWidgetGOs) {
+                    Standard3DTransformWidget widget = Widgets[go];
+                    bool visible = widget.CheckVisibility(ref frameW, ref camPosW);
+                    go.SetVisible(visible);
+                }
+            }
+
         }
 
         public virtual void Create(FScene parentScene, List<SceneObject> targets) {
 			this.parentScene = parentScene;
 			this.targets = targets;
 
-			gizmo = new GameObject("TransformGizmo");
+			root = GameObjectFactory.CreateParentGO("TransformGizmo");
 
-			float fAlpha = 0.5f;
-			xMaterial = MaterialUtil.CreateTransparentMaterial (Color.red, fAlpha);
-			yMaterial = MaterialUtil.CreateTransparentMaterial (Color.green, fAlpha);
-			zMaterial = MaterialUtil.CreateTransparentMaterial (Color.blue, fAlpha);
-            xHoverMaterial = MaterialUtil.CreateStandardMaterial(Color.red);
-            yHoverMaterial = MaterialUtil.CreateStandardMaterial(Color.green);
-            zHoverMaterial = MaterialUtil.CreateStandardMaterial(Color.blue);
-            allMaterial = MaterialUtil.CreateTransparentMaterial(Color.white, fAlpha);
-            allHoverMaterial = MaterialUtil.CreateStandardMaterial(Color.white);
+            var xMaterial = Factory.MakeMaterial(AxisGizmoFlags.AxisTranslateX);
+            var xHoverMaterial = Factory.MakeHoverMaterial(AxisGizmoFlags.AxisTranslateX);
+            var yMaterial = Factory.MakeMaterial(AxisGizmoFlags.AxisTranslateY);
+            var yHoverMaterial = Factory.MakeHoverMaterial(AxisGizmoFlags.AxisTranslateY);
+            var zMaterial = Factory.MakeMaterial(AxisGizmoFlags.AxisTranslateZ);
+            var zHoverMaterial = Factory.MakeHoverMaterial(AxisGizmoFlags.AxisTranslateZ);
 
-            translate_x = AppendMeshGO ("x_translate", 
-				FResources.LoadMesh("transform_gizmo/axis_translate_x"),
-				xMaterial, gizmo);
-            Widgets[translate_x] = new AxisTranslationWidget(0) {
-                RootGameObject = translate_x, StandardMaterial = xMaterial, HoverMaterial = xHoverMaterial,
-                TranslationScaleF = () => { return 1.0f / parentScene.GetSceneScale(); }
-            };
-			translate_y = AppendMeshGO ("y_translate", 
-				FResources.LoadMesh("transform_gizmo/axis_translate_y"),
-				yMaterial, gizmo);
-			Widgets [translate_y] = new AxisTranslationWidget(1) {
-                RootGameObject = translate_y, StandardMaterial = yMaterial, HoverMaterial = yHoverMaterial,
-                TranslationScaleF = () => { return 1.0f / parentScene.GetSceneScale(); }
-            };
-            translate_z = AppendMeshGO ("z_translate", 
-				FResources.LoadMesh("transform_gizmo/axis_translate_z"),
-				zMaterial, gizmo);	
-			Widgets [translate_z] = new AxisTranslationWidget(2) {
-                RootGameObject = translate_z, StandardMaterial = zMaterial, HoverMaterial = zHoverMaterial,
-                TranslationScaleF = () => { return 1.0f / parentScene.GetSceneScale(); }
-            };
+            if ( Factory.Supports(AxisGizmoFlags.AxisTranslateX) )
+                translate_x = append_widget(AxisGizmoFlags.AxisTranslateX, 0, "x_translate", xMaterial, xHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.AxisTranslateY))
+                translate_y = append_widget(AxisGizmoFlags.AxisTranslateY, 1, "y_translate", yMaterial, yHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.AxisTranslateZ))
+                translate_z = append_widget(AxisGizmoFlags.AxisTranslateZ, 2, "z_translate", zMaterial, zHoverMaterial);
 
+            if (Factory.Supports(AxisGizmoFlags.AxisRotateX))
+                rotate_x = append_widget(AxisGizmoFlags.AxisRotateX, 0, "x_rotate", xMaterial, xHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.AxisRotateY))
+                rotate_y = append_widget(AxisGizmoFlags.AxisRotateY, 1, "y_rotate", yMaterial, yHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.AxisRotateZ))
+                rotate_z = append_widget(AxisGizmoFlags.AxisRotateZ, 2, "z_rotate", zMaterial, zHoverMaterial);
 
-            rotate_x = AppendMeshGO ("x_rotate",
-				FResources.LoadMesh("transform_gizmo/axisrotate_x"),
-				xMaterial, gizmo);
-			Widgets [rotate_x] = new AxisRotationWidget(0) {
-                RootGameObject = rotate_x, StandardMaterial = xMaterial, HoverMaterial = xHoverMaterial };
-            rotate_y = AppendMeshGO ("y_rotate",
-				FResources.LoadMesh("transform_gizmo/axisrotate_y"),
-				yMaterial, gizmo);
-			Widgets [rotate_y] = new AxisRotationWidget(1) {
-                RootGameObject = rotate_y, StandardMaterial = yMaterial, HoverMaterial = yHoverMaterial };
-            rotate_z = AppendMeshGO ("z_rotate",
-				FResources.LoadMesh("transform_gizmo/axisrotate_z"),
-				zMaterial, gizmo);			
-			Widgets [rotate_z] = new AxisRotationWidget(2) {
-                RootGameObject = rotate_z, StandardMaterial = zMaterial, HoverMaterial = zHoverMaterial };
+            if (Factory.Supports(AxisGizmoFlags.PlaneTranslateX))
+                translate_yz = append_widget(AxisGizmoFlags.PlaneTranslateX, 0, "yz_translate", xMaterial, xHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.PlaneTranslateY))
+                translate_xz = append_widget(AxisGizmoFlags.PlaneTranslateY, 1, "xz_translate", yMaterial, yHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.PlaneTranslateZ))
+                translate_xy = append_widget(AxisGizmoFlags.PlaneTranslateZ, 2, "xy_translate", zMaterial, zHoverMaterial);
 
+            if (Factory.Supports(AxisGizmoFlags.UniformScale))
+                uniform_scale = append_widget(AxisGizmoFlags.UniformScale, 0, "uniform_scale", null, null);
 
-            // plane translation widgets
-            translate_xy = AppendMeshGO ("xy_translate",
-				FResources.LoadMesh("transform_gizmo/plane_translate_xy"),
-				zMaterial, gizmo);
-			Widgets [translate_xy] = new PlaneTranslationWidget(2) {
-                RootGameObject = translate_xy, StandardMaterial = zMaterial, HoverMaterial = zHoverMaterial,
-                TranslationScaleF = () => { return 1.0f / parentScene.GetSceneScale(); }
-            };
-            translate_xz = AppendMeshGO ("xz_translate",
-				FResources.LoadMesh("transform_gizmo/plane_translate_xz"),
-				yMaterial, gizmo);
-			Widgets [translate_xz] = new PlaneTranslationWidget(1) {
-                RootGameObject = translate_xz, StandardMaterial = yMaterial, HoverMaterial = yHoverMaterial,
-                TranslationScaleF = () => { return 1.0f / parentScene.GetSceneScale(); }
-            };
-            translate_yz = AppendMeshGO ("yz_translate",
-				FResources.LoadMesh("transform_gizmo/plane_translate_yz"),
-				xMaterial, gizmo);
-			Widgets [translate_yz] = new PlaneTranslationWidget(0) {
-                RootGameObject = translate_yz, StandardMaterial = xMaterial, HoverMaterial = xHoverMaterial,
-                TranslationScaleF = () => { return 1.0f / parentScene.GetSceneScale(); }
-            };
-
-
-            uniform_scale = AppendMeshGO("uniform_scale",
-                FResources.LoadMesh("transform_gizmo/uniform_scale"), allMaterial, gizmo);
-            Widgets[uniform_scale] = new UniformScaleWidget(parentScene.ActiveCamera) {
-                RootGameObject = uniform_scale, StandardMaterial = allMaterial, HoverMaterial = allHoverMaterial,
-                ScaleMultiplierF = () => { return 1.0f / parentScene.GetSceneScale(); }
-            };
-
-            gizmoGeomBounds = UnityUtil.GetGeometryBoundingBox( new List<GameObject>()
-                { translate_x,translate_y,translate_z,rotate_x,rotate_y,rotate_z,translate_xy,translate_xz,translate_yz,uniform_scale} );
+            gizmoGeomBounds = UnityUtil.GetGeometryBoundingBox(root, true);
+            gizmoGeomBounds.Contain(Vector3d.Zero);
+            initialGizmoRadius = gizmoGeomBounds.MaxDim;
+            foreach (var widget in Widgets)
+                widget.Value.SetGizmoInitialRadius(initialGizmoRadius);
 
             // disable shadows on widget components
             foreach ( var go in GameObjects )
@@ -303,13 +338,71 @@ namespace f3
             eCurrentFrameMode = FrameType.LocalFrame;
 			SetActiveFrame (eCurrentFrameMode);
 
-            SetLayer(FPlatform.WidgetOverlayLayer);
+            SetLayer( (GizmoLayer == -1) ? FPlatform.WidgetOverlayLayer : GizmoLayer );
 
             // seems like possibly this geometry will be shown this frame, before PreRender()
             // is called, which means that on next frame the geometry will pop. 
             // So we hide here and show in PreRender
-            gizmo.Hide();
+            root.Hide();
         }
+
+
+        virtual protected fGameObject append_widget(AxisGizmoFlags widgetType, int nAxis, string name, 
+            fMaterial material, fMaterial hoverMaterial)
+        {
+            var useMaterial = (Factory.UniqueColorPerWidget || material == null) 
+                ? Factory.MakeMaterial(widgetType) : material;
+            var useHoverMaterial = (Factory.UniqueColorPerWidget || hoverMaterial == null) 
+                ? Factory.MakeHoverMaterial(widgetType) : hoverMaterial;
+            var go = AppendMeshGO(name, Factory.MakeGeometry(widgetType), useMaterial, RootGameObject, true);
+
+            Standard3DTransformWidget widget = null;
+            switch (widgetType) {
+                case AxisGizmoFlags.AxisTranslateX:
+                case AxisGizmoFlags.AxisTranslateY:
+                case AxisGizmoFlags.AxisTranslateZ:
+                    widget = new AxisTranslationWidget(nAxis) {
+                        RootGameObject = go, StandardMaterial = useMaterial, HoverMaterial = useHoverMaterial,
+                        TranslationScaleF = () => { return TranslateSpeed / parentScene.GetSceneScale(); }
+                    };
+                    break;
+
+                case AxisGizmoFlags.AxisRotateX:
+                case AxisGizmoFlags.AxisRotateY:
+                case AxisGizmoFlags.AxisRotateZ:
+                    widget = new AxisRotationWidget(nAxis) {
+                        RootGameObject = go, StandardMaterial = useMaterial, HoverMaterial = useHoverMaterial,
+                        EnableSnapping = EnableRotationSnapping,
+                        SnapIncrementDeg = RotationSnapStepSizeDeg
+                    };
+                    break;
+
+                case AxisGizmoFlags.PlaneTranslateX:
+                case AxisGizmoFlags.PlaneTranslateY:
+                case AxisGizmoFlags.PlaneTranslateZ:
+                    widget = new PlaneTranslationWidget(nAxis) {
+                        RootGameObject = go, StandardMaterial = useMaterial, HoverMaterial = useHoverMaterial,
+                        TranslationScaleF = () => { return TranslateSpeed / parentScene.GetSceneScale(); }
+                    };
+                    break;
+
+                case AxisGizmoFlags.UniformScale:
+                    widget = new UniformScaleWidget(parentScene.ActiveCamera) {
+                        RootGameObject = go, StandardMaterial = useMaterial, HoverMaterial = useHoverMaterial,
+                        ScaleMultiplierF = () => { return ScaleSpeed / parentScene.GetSceneScale(); }
+                    };
+                    break;
+
+                default:
+                    throw new Exception("DefaultAxisGizmoWidgetFactory.MakeHoverMaterial: invalid widget type " + widget.ToString());
+            }
+
+            Widgets[go] = widget;
+            return go;
+        }
+
+
+
 
 
 
@@ -340,8 +433,7 @@ namespace f3
             onTransformModified(null);
 
             // configure gizmo
-            if (uniform_scale != null)
-                uniform_scale.SetVisible( targetWrapper.SupportsScaling && (eEnabledWidgets & AxisGizmoFlags.UniformScale) != 0);
+            update_active();
 		}
 
 
@@ -391,26 +483,38 @@ namespace f3
         {
             // keep widget synced with object frame of target
             Frame3f widgetFrame = targetWrapper.GetLocalFrame(CoordSpace.ObjectCoords);
-            gizmo.SetLocalPosition( widgetFrame.Origin );
-            gizmo.SetLocalRotation( widgetFrame.Rotation );
+            root.SetLocalPosition( widgetFrame.Origin );
+            root.SetLocalRotation( widgetFrame.Rotation );
         }
 
 
         void update_active()
         {
-            if (translate_x != null) translate_x.SetActive((eEnabledWidgets & AxisGizmoFlags.AxisTranslateX) != 0);
-            if (translate_y != null) translate_y.SetActive((eEnabledWidgets & AxisGizmoFlags.AxisTranslateY) != 0);
-            if (translate_z != null) translate_z.SetActive((eEnabledWidgets & AxisGizmoFlags.AxisTranslateZ) != 0);
+            foreach (var go in Widgets.Keys)
+                go.SetVisible(false);
+            enabledWidgetGOs.Clear();
 
-            if (rotate_x != null) rotate_x.SetActive((eEnabledWidgets & AxisGizmoFlags.AxisRotateX) != 0 );
-            if (rotate_y != null) rotate_y.SetActive((eEnabledWidgets & AxisGizmoFlags.AxisRotateY) != 0);
-            if (rotate_z != null) rotate_z.SetActive((eEnabledWidgets & AxisGizmoFlags.AxisRotateZ) != 0);
+            if (translate_x != null && (eEnabledWidgets & AxisGizmoFlags.AxisTranslateX) != 0)  enabledWidgetGOs.Add(translate_x);
+            if (translate_y != null && (eEnabledWidgets & AxisGizmoFlags.AxisTranslateY) != 0)  enabledWidgetGOs.Add(translate_y);
+            if (translate_z != null && (eEnabledWidgets & AxisGizmoFlags.AxisTranslateZ) != 0)  enabledWidgetGOs.Add(translate_z);
 
-            if (translate_yz != null) translate_yz.SetActive((eEnabledWidgets & AxisGizmoFlags.PlaneTranslateX) != 0);
-            if (translate_xz != null) translate_xz.SetActive((eEnabledWidgets & AxisGizmoFlags.PlaneTranslateY) != 0);
-            if (translate_xy != null) translate_xy.SetActive((eEnabledWidgets & AxisGizmoFlags.PlaneTranslateZ) != 0);
+            if (rotate_x != null && (eEnabledWidgets & AxisGizmoFlags.AxisRotateX) != 0) enabledWidgetGOs.Add(rotate_x);
+            if (rotate_y != null && (eEnabledWidgets & AxisGizmoFlags.AxisRotateY) != 0) enabledWidgetGOs.Add(rotate_y);
+            if (rotate_z != null && (eEnabledWidgets & AxisGizmoFlags.AxisRotateZ) != 0) enabledWidgetGOs.Add(rotate_z);
 
-            if (uniform_scale != null) uniform_scale.SetActive((eEnabledWidgets & AxisGizmoFlags.UniformScale) != 0);
+            if (translate_yz != null && (eEnabledWidgets & AxisGizmoFlags.PlaneTranslateX) != 0) enabledWidgetGOs.Add(translate_yz);
+            if (translate_xz != null && (eEnabledWidgets & AxisGizmoFlags.PlaneTranslateY) != 0) enabledWidgetGOs.Add(translate_xz);
+            if (translate_xy != null && (eEnabledWidgets & AxisGizmoFlags.PlaneTranslateZ) != 0) enabledWidgetGOs.Add(translate_xy);
+
+            if (uniform_scale != null) {
+                if ( (eEnabledWidgets & AxisGizmoFlags.UniformScale) != 0)
+                    enabledWidgetGOs.Add(uniform_scale);
+                if (targetWrapper != null && targetWrapper.SupportsScaling == false)
+                    enabledWidgetGOs.Remove(uniform_scale);
+            }
+
+            foreach (var widget in enabledWidgetGOs)
+                widget.SetVisible(true);
         }
 
 
@@ -483,7 +587,7 @@ namespace f3
 			// if the hit gameobject has a widget attached to it, begin capture & transformation
 			// TODO maybe wrapper class should have Begin/Update/End capture functions, then we do not need BeginTransformation/EndTransformation ?
 			if (Widgets.ContainsKey (e.hit.hitGO)) {
-                Standard3DWidget w = Widgets [e.hit.hitGO];
+                Standard3DTransformWidget w = Widgets [e.hit.hitGO];
 				if (w.BeginCapture (targetWrapper, e.ray, e.hit.toUIHit() )) {
                     MaterialUtil.SetMaterial(w.RootGameObject, w.HoverMaterial);
                     targetWrapper.BeginTransformation ();
@@ -511,17 +615,19 @@ namespace f3
         virtual public bool EndCapture(InputEvent e)
 		{
 			if (activeWidget != null) {
+                activeWidget.EndCapture(targetWrapper);
                 MaterialUtil.SetMaterial(activeWidget.RootGameObject, activeWidget.StandardMaterial);
 
                 // tell wrapper we are done with capture, so it should bake transform/etc
-                bool bModified = targetWrapper.DoneTransformation ();
+                bool bModified = targetWrapper.DoneTransformation(EmitChanges);
                 if (bModified) {
                     // update gizmo
                     onTransformModified(null);
                     // allow client/subclass to add any other change records
                     OnTransformInteractionEnd();
                     // gizmos drop change events by default
-                    Scene.History.PushInteractionCheckpoint();
+                    if (EmitChanges)
+                        Scene.History.PushInteractionCheckpoint();
                 }
 
 				activeWidget = null;
@@ -549,8 +655,191 @@ namespace f3
                 hoverWidget = null;
             }
         }
-
     }
+
+
+
+
+
+
+    /// <summary>
+    /// Default material/geometry provider for axis transformation gizmo
+    /// </summary>
+    public class DefaultAxisGizmoWidgetFactory : IAxisGizmoWidgetFactory
+    {
+        public float Alpha = 0.5f;
+        public int OverrideRenderQueue = -1;
+
+        public virtual bool Supports(AxisGizmoFlags widget) {
+            return true;
+        }
+
+        public virtual bool UniqueColorPerWidget {
+            get { return false; }
+        }
+
+        static fMaterial XMaterial, YMaterial, ZMaterial, AllMaterial;
+
+        public virtual fMaterial MakeMaterial(AxisGizmoFlags widget)
+        {
+            switch (widget) {
+                case AxisGizmoFlags.AxisRotateX:
+                case AxisGizmoFlags.AxisTranslateX:
+                case AxisGizmoFlags.PlaneTranslateX:
+                    if (XMaterial == null) {
+                        XMaterial = MaterialUtil.CreateTransparentMaterial(Colorf.VideoRed, Alpha);
+                        if (OverrideRenderQueue != -1)
+                            XMaterial.renderQueue = OverrideRenderQueue;
+                    }
+                    return XMaterial;
+
+                case AxisGizmoFlags.AxisRotateY:
+                case AxisGizmoFlags.AxisTranslateY:
+                case AxisGizmoFlags.PlaneTranslateY:
+                    if (YMaterial == null) {
+                        YMaterial = MaterialUtil.CreateTransparentMaterial(Colorf.VideoGreen, Alpha);
+                        if (OverrideRenderQueue != -1)
+                            YMaterial.renderQueue = OverrideRenderQueue;
+                    }
+                    return YMaterial;
+
+                case AxisGizmoFlags.AxisRotateZ:
+                case AxisGizmoFlags.AxisTranslateZ:
+                case AxisGizmoFlags.PlaneTranslateZ:
+                    if (ZMaterial == null) { 
+                        ZMaterial = MaterialUtil.CreateTransparentMaterial(Colorf.VideoBlue, Alpha);
+                        if (OverrideRenderQueue != -1)
+                            ZMaterial.renderQueue = OverrideRenderQueue;
+                    }
+                    return ZMaterial;
+
+                case AxisGizmoFlags.UniformScale:
+                    if (AllMaterial == null) {
+                        AllMaterial = MaterialUtil.CreateTransparentMaterial(Colorf.VideoWhite, Alpha);
+                        if (OverrideRenderQueue != -1)
+                            AllMaterial.renderQueue = OverrideRenderQueue;
+                    }
+                    return AllMaterial;
+
+                default:
+                    throw new Exception("DefaultAxisGizmoWidgetFactory.MakeMaterial: invalid widget type " + widget.ToString());
+            }
+        }
+
+
+        static fMaterial XHover, YHover, ZHover, AllHover;
+
+
+        public virtual fMaterial MakeHoverMaterial(AxisGizmoFlags widget)
+        {
+            switch (widget) {
+                case AxisGizmoFlags.AxisRotateX:
+                case AxisGizmoFlags.AxisTranslateX:
+                case AxisGizmoFlags.PlaneTranslateX:
+                    if (XHover == null) {
+                        XHover = MaterialUtil.CreateTransparentMaterial(Colorf.VideoRed);
+                        if (OverrideRenderQueue != -1)
+                            XHover.renderQueue = OverrideRenderQueue;
+                    }
+                    return XHover;
+
+                case AxisGizmoFlags.AxisRotateY:
+                case AxisGizmoFlags.AxisTranslateY:
+                case AxisGizmoFlags.PlaneTranslateY:
+                    if (YHover == null) {
+                        YHover = MaterialUtil.CreateTransparentMaterial(Colorf.VideoGreen);
+                        if (OverrideRenderQueue != -1)
+                            YHover.renderQueue = OverrideRenderQueue;
+                    }
+                    return YHover;
+
+                case AxisGizmoFlags.AxisRotateZ:
+                case AxisGizmoFlags.AxisTranslateZ:
+                case AxisGizmoFlags.PlaneTranslateZ:
+                    if (ZHover == null) {
+                        ZHover = MaterialUtil.CreateTransparentMaterial(Colorf.VideoBlue);
+                        if (OverrideRenderQueue != -1)
+                            ZHover.renderQueue = OverrideRenderQueue;
+                    }
+                    return ZHover;
+
+                case AxisGizmoFlags.UniformScale:
+                    if (AllHover == null) {
+                        AllHover = MaterialUtil.CreateTransparentMaterial(Colorf.VideoWhite);
+                        if (OverrideRenderQueue != -1)
+                            AllHover.renderQueue = OverrideRenderQueue;
+                    }
+                    return AllHover;
+
+                default:
+                    throw new Exception("DefaultAxisGizmoWidgetFactory.MakeHoverMaterial: invalid widget type " + widget.ToString());
+            }
+        }
+
+
+        static fMesh AxisTranslateX, AxisTranslateY, AxisTranslateZ;
+        static fMesh AxisRotateX, AxisRotateY, AxisRotateZ;
+        static fMesh PlaneTranslateX, PlaneTranslateY, PlaneTranslateZ;
+        static fMesh UniformScale;
+
+
+        public virtual fMesh MakeGeometry(AxisGizmoFlags widget)
+        {
+            switch (widget) {
+                case AxisGizmoFlags.AxisTranslateX:
+                    if (AxisTranslateX == null)
+                        AxisTranslateX = FResources.LoadMesh("transform_gizmo/axis_translate_x");
+                    return AxisTranslateX;
+                case AxisGizmoFlags.AxisTranslateY:
+                    if (AxisTranslateY == null)
+                        AxisTranslateY = FResources.LoadMesh("transform_gizmo/axis_translate_y");
+                    return AxisTranslateY;
+                case AxisGizmoFlags.AxisTranslateZ:
+                    if (AxisTranslateZ == null)
+                        AxisTranslateZ = FResources.LoadMesh("transform_gizmo/axis_translate_z");
+                    return AxisTranslateZ;
+
+
+                case AxisGizmoFlags.AxisRotateX:
+                    if (AxisRotateX == null)
+                        AxisRotateX = FResources.LoadMesh("transform_gizmo/axisrotate_x");
+                    return AxisRotateX;
+                case AxisGizmoFlags.AxisRotateY:
+                    if (AxisRotateY == null)
+                        AxisRotateY = FResources.LoadMesh("transform_gizmo/axisrotate_y");
+                    return AxisRotateY;
+                case AxisGizmoFlags.AxisRotateZ:
+                    if (AxisRotateZ == null)
+                        AxisRotateZ = FResources.LoadMesh("transform_gizmo/axisrotate_z");
+                    return AxisRotateZ;
+
+
+                case AxisGizmoFlags.PlaneTranslateX:
+                    if (PlaneTranslateX == null)
+                        PlaneTranslateX = FResources.LoadMesh("transform_gizmo/plane_translate_yz");
+                    return PlaneTranslateX;
+                case AxisGizmoFlags.PlaneTranslateY:
+                    if (PlaneTranslateY == null)
+                        PlaneTranslateY = FResources.LoadMesh("transform_gizmo/plane_translate_xz");
+                    return PlaneTranslateY;
+                case AxisGizmoFlags.PlaneTranslateZ:
+                    if (PlaneTranslateZ == null)
+                        PlaneTranslateZ = FResources.LoadMesh("transform_gizmo/plane_translate_xy");
+                    return PlaneTranslateZ;
+
+
+                case AxisGizmoFlags.UniformScale:
+                    if (UniformScale == null)
+                        UniformScale = FResources.LoadMesh("transform_gizmo/uniform_scale");
+                    return UniformScale;
+
+
+                default:
+                    throw new Exception("DefaultAxisGizmoWidgetFactory.MakeHoverMaterial: invalid widget type " + widget.ToString());
+            }
+        }
+    }
+
 }
 
  

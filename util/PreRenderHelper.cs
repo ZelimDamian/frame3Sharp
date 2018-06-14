@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using UnityEngine;
 using g3;
 
 namespace f3
@@ -30,7 +29,7 @@ namespace f3
         public PreRenderHelper(string sName = "pre_render_helper", bool bDestroyOnDisconnect = false)
         {
             this.bDestroyOnDisconnect = bDestroyOnDisconnect;
-            dummyGO = new GameObject(sName);
+            dummyGO = GameObjectFactory.CreateParentGO(sName);
         }
 
         public fGameObject RootGameObject { get { return dummyGO; } }
@@ -53,7 +52,7 @@ namespace f3
 
         public void Disconnect() {
             if (bDestroyOnDisconnect)
-                GameObject.Destroy(dummyGO);
+                dummyGO.Destroy();
             FUtil.SafeSendEvent(OnDisconnected, this, EventArgs.Empty);
         }
         public event EventHandler OnDisconnected;

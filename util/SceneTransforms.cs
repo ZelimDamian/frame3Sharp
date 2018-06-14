@@ -139,7 +139,7 @@ namespace f3
         public static Frame3f ApplyTransform(ITransformed transform, Frame3f frameIn )
         {
             Frame3f result = frameIn.Scaled(transform.GetLocalScale());
-            return transform.GetLocalFrame(CoordSpace.ObjectCoords).FromFrame(result);
+            return transform.GetLocalFrame(CoordSpace.ObjectCoords).FromFrame(ref result);
         }
 
 
@@ -148,12 +148,37 @@ namespace f3
         /// </summary>
         public static Frame3f ApplyInverseTransform(ITransformed transform, Frame3f frameIn )
         {
-            Frame3f result = transform.GetLocalFrame(CoordSpace.ObjectCoords).ToFrame(frameIn);
+            Frame3f result = transform.GetLocalFrame(CoordSpace.ObjectCoords).ToFrame(ref frameIn);
             Vector3f scale = transform.GetLocalScale();
             Util.gDevAssert(IsUniformScale(scale));
             result.Scale(1.0f / scale);
             return result;
         }
+
+
+
+        /// <summary>
+        /// Cache the transform sequence from scene coordinates down to SO-local coordinates
+        /// </summary>
+        public static TransformSequence SceneToObjectXForm(SceneObject so)
+        {
+            // [TODO] could be more efficient?
+            return ObjectToSceneXForm(so).MakeInverse();
+        }
+
+
+
+        /// <summary>
+        /// construct cache of object-to-object xform
+        /// </summary>
+        public static TransformSequence ObjectToObjectXForm(SceneObject fromSO, SceneObject toSO)
+        {
+            TransformSequence fromToScene = ObjectToSceneXForm(fromSO);
+            TransformSequence sceneToTarget = SceneToObjectXForm(toSO);
+            fromToScene.Append(sceneToTarget);
+            return fromToScene;
+        }
+
 
 
         /// <summary>
@@ -180,6 +205,30 @@ namespace f3
             Frame3f fO = SceneToObject(so, f);
             return new Ray3f(fO.Origin, fO.Z);
         }
+
+
+        /// <summary>
+        /// input box is in Scene, apply all intermediate inverse
+        /// transforms to get it to local frame of SO
+        /// </summary>
+        public static Box3f SceneToObject(SceneObject so, Box3f box)
+        {
+            Frame3f f = new Frame3f(box.Center, box.AxisX, box.AxisY, box.AxisZ);
+            Frame3f fL = SceneToObject(so, f);
+
+            // [TODO] make more efficient...
+            Vector3f dv = box.Extent.x*box.AxisX + box.Extent.y*box.AxisY + box.Extent.z*box.AxisZ;
+            Frame3f fCornerS = new Frame3f(box.Center + dv);
+            Frame3f fCornerL = SceneToObject(so, fCornerS);
+            Vector3f dvL = fCornerL.Origin - fL.Origin;
+            Vector3f scales = new Vector3f(
+                dvL.Dot(fCornerL.X) / box.Extent.x,
+                dvL.Dot(fCornerL.Y) / box.Extent.y,
+                dvL.Dot(fCornerL.Z) / box.Extent.z);
+            
+            return new Box3f(fL.Origin, fL.X, fL.Y, fL.Z, scales * box.Extent);
+        }
+
 
         /// <summary>
         /// Input sceneF is a point in Scene, apply all intermediate inverse 
@@ -208,8 +257,8 @@ namespace f3
         }
 
         /// <summary>
-        /// input dimension is in scene coords of so, (recursively) apply all 
-        /// intermediate inverse-scales to get it to Scene coords
+        /// input dimension is in scene coords, (recursively) apply all 
+        /// intermediate inverse-scales to get it into local coords of SO.
         /// </summary>
         public static float SceneToObject(SceneObject so, float sceneDim)
         {
@@ -217,12 +266,13 @@ namespace f3
         }
         static float inverse_scale_recursive(SceneObject so, float dim)
         {
-            if (so.Parent is FScene)
-                return dim;
             Vector3f scale = so.GetLocalScale();
             Util.gDevAssert(IsUniformScale(scale));
             float avgscale = ((scale.x + scale.y + scale.z) / 3.0f);   // yikes!
-            return inverse_scale_recursive(so.Parent as SceneObject, dim) / avgscale;
+            if (so.Parent is FScene)
+                return dim / avgscale;
+            else
+                return inverse_scale_recursive(so.Parent as SceneObject, dim) / avgscale;
         }
 
 
@@ -231,6 +281,29 @@ namespace f3
         [System.Obsolete("Renamed to SceneToObjectP")]
         public static Vector3d SceneToObject(SceneObject so, Vector3d scenePt) { return SceneToObjectP(so, scenePt); }
 
+
+
+
+
+        /// <summary>
+        /// Cache the transform sequence from SO up to scene coordinates
+        /// </summary>
+        public static TransformSequence ObjectToSceneXForm(SceneObject so)
+        {
+            TransformSequence seq = new TransformSequence();
+            SceneObject curSO = so;
+            while (curSO != null) {
+                Frame3f curF = curSO.GetLocalFrame(CoordSpace.ObjectCoords);
+                Vector3f scale = curSO.GetLocalScale();
+                seq.AppendScale(scale);
+                seq.AppendFromFrame(curF);
+                SOParent parent = curSO.Parent;
+                if (parent is FScene)
+                    break;
+                curSO = (parent as SceneObject);
+            }
+            return seq;
+        }
 
 
 
@@ -270,7 +343,7 @@ namespace f3
                 Vector3f scale = curSO.GetLocalScale();
                 Util.gDevAssert(IsUniformScale(scale));
                 sceneF.Scale(scale);
-                sceneF = curF.FromFrame(sceneF);
+                sceneF = curF.FromFrame(ref sceneF);
                 SOParent parent = curSO.Parent;
                 if (parent is FScene)
                     return sceneF;
@@ -285,11 +358,26 @@ namespace f3
         /// input ray is in Object (local) coords of so, apply all intermediate 
         /// transforms to get it to Scene coords
         /// </summary>
-        public static Ray3f ObjectToSceneP(SceneObject so, Ray3f ray)
+        public static Ray3f ObjectToScene(SceneObject so, Ray3f ray)
         {
             Frame3f f = new Frame3f(ray.Origin, ray.Direction);
             Frame3f fS = ObjectToScene(so, f);
             return new Ray3f(fS.Origin, fS.Z);
+        }
+
+
+        /// <summary>
+        /// input box is in Object (local) coords of so, apply all intermediate 
+        /// transforms to get it to Scene coords
+        /// </summary>
+        public static Box3f ObjectToScene(SceneObject so, Box3f box)
+        {
+            Frame3f f = new Frame3f(box.Center, box.AxisX, box.AxisY, box.AxisZ);
+            Frame3f fS = ObjectToScene(so, f);
+            // [TODO] could maybe figure out nonuniform scaling by applying this to
+            //   box-corner-pt vector instead, and taking dots before/after?
+            float scale = ObjectToSceneV(so, Vector3f.OneNormalized).Length;
+            return new Box3f(fS.Origin, fS.X, fS.Y, fS.Z, scale*box.Extent);
         }
 
 
@@ -310,7 +398,7 @@ namespace f3
 
 
         /// <summary>
-        /// Input sceneN is a normal vector in local coords of SO, apply all intermediate inverse 
+        /// Input objectN is a normal vector in local coords of SO, apply all intermediate inverse 
         /// transforms to get it into scene coords. **NO SCALING**
         /// </summary>
         public static Vector3f ObjectToSceneN(SceneObject so, Vector3f objectN)
@@ -319,6 +407,31 @@ namespace f3
             Frame3f fO = ObjectToScene(so, f);
             return fO.Z;
         }
+
+
+        /// <summary>
+        /// Input objectV is a vector in local coords of SO, apply all intermediate inverse 
+        /// transforms to get it into scene coords.
+        /// </summary>
+        public static Vector3f ObjectToSceneV(SceneObject so, Vector3f objectV)
+        {
+            Vector3f sceneV = objectV;
+            SceneObject curSO = so;
+            while (curSO != null) {
+                Frame3f curF = curSO.GetLocalFrame(CoordSpace.ObjectCoords);
+                Vector3f scale = curSO.GetLocalScale();
+                sceneV *= scale;
+                sceneV = curF.FromFrameV(ref sceneV);
+                SOParent parent = curSO.Parent;
+                if (parent is FScene)
+                    return sceneV;
+                curSO = (parent as SceneObject);
+            }
+            if (curSO == null)
+                DebugUtil.Error("SceneTransforms.ObjectToSceneV: found null parent SO!");
+            return sceneV;
+        }
+
 
         [System.Obsolete("Renamed to SceneToObjectP")]
         public static Vector3f ObjectToScene(SceneObject so, Vector3f objectPt) { return ObjectToSceneP(so, objectPt); }

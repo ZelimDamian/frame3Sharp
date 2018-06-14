@@ -108,8 +108,8 @@ namespace f3
 		public virtual fGameObject AppendUnityPrimitiveGO(string name, PrimitiveType eType, Material setMaterial, GameObject parent, bool bCollider = true) {
 			var gameObj = GameObject.CreatePrimitive (eType);
             if (bCollider) {
-                gameObj.AddComponent(typeof(MeshCollider));
-                gameObj.GetComponent<MeshCollider>().enabled = false;
+                gameObj.AddComponent<MeshCollider>();
+                gameObj.DisableCollider();
             }
 			gameObj.GetComponent<MeshRenderer> ().material = setMaterial;
             gameObj.SetName(name);
@@ -139,8 +139,11 @@ namespace f3
 
         public virtual void SetAllGOMaterials(Material m) {
             foreach (var go in vObjects) {
-                if (go.GetComponent<IgnoreMaterialChanges>() == null)
-                    go.GetComponent<MeshRenderer>().material = m;
+                if (go.GetComponent<IgnoreMaterialChanges>() == null) {
+                    MeshRenderer ren = go.GetComponent<MeshRenderer>();
+                    if (ren != null)
+                        ren.material = m;
+                }
             }
 		}
 
@@ -160,7 +163,7 @@ namespace f3
         }
 
 
-		public virtual bool FindGORayIntersection (Ray ray, out GameObjectRayHit hit)
+		public virtual bool FindGORayIntersection (Ray ray, out GameObjectRayHit hit, Func<GameObject, bool> FilterF = null)
 		{
 			hit = new GameObjectRayHit();
 			RaycastHit hitInfo;
@@ -172,9 +175,14 @@ namespace f3
             //}
 
 			foreach (var go in vObjects) {
+                if ( FilterF != null && FilterF(go) == false)
+                    continue;
+                if (go.IsVisible() == false)
+                    continue;
+
                 Collider collider = go.GetComponent<Collider>();
                 if (collider) {
-                    collider.enabled = true;
+                    go.EnableCollider();
                     if (collider.Raycast(ray, out hitInfo, Mathf.Infinity)) {
                         if (hitInfo.distance < hit.fHitDist) {
                             hit.fHitDist = hitInfo.distance;
@@ -183,7 +191,7 @@ namespace f3
                             hit.hitGO = go;
                         }
                     }
-                    collider.enabled = false;
+                    go.DisableCollider();
                 }
 			}
 
@@ -192,14 +200,17 @@ namespace f3
 
 
 		public virtual bool IsGOHit(Ray ray, GameObject go) {
+            if (go.IsVisible() == false)
+                return false;
+
 			bool bHit = false;
 			RaycastHit hitInfo;
             MeshCollider collider = go.GetComponent<MeshCollider>();
             if (collider) {
-                collider.enabled = true;
+                go.EnableCollider();
                 if (collider.Raycast(ray, out hitInfo, Mathf.Infinity))
                     bHit = true;
-                collider.enabled = false;
+                go.DisableCollider();
             }
 			return bHit;
 		}

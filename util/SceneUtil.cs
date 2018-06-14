@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using UnityEngine;
 using g3;
 
 namespace f3
@@ -12,7 +11,7 @@ namespace f3
 
 
 
-        public static bool FindNearestRayIntersection(IEnumerable<SceneObject> vSceneObjects, Ray ray, out SORayHit hit) {
+        public static bool FindNearestRayIntersection(IEnumerable<SceneObject> vSceneObjects, Ray3f ray, out SORayHit hit) {
             hit = null;
             foreach (var so in vSceneObjects) {
                 SORayHit soHit;
@@ -23,7 +22,7 @@ namespace f3
             }
             return (hit != null);
         }
-        public static bool FindNearestRayIntersection(IEnumerable<SceneObject> vSceneObjects, Func<SceneObject,bool> filter, Ray ray, out SORayHit hit)
+        public static bool FindNearestRayIntersection(IEnumerable<SceneObject> vSceneObjects, Func<SceneObject,bool> filter, Ray3f ray, out SORayHit hit)
         {
             hit = null;
             foreach (var so in vSceneObjects) {
@@ -124,21 +123,6 @@ namespace f3
         }
 
 
-        public static Bounds GetLocalBoundingBox(IEnumerable<SceneObject> vObjects) {
-            int i = 0;
-            AxisAlignedBox3f b = AxisAlignedBox3f.Infinite;
-            foreach ( SceneObject so in vObjects ) {
-                if (i == 0)
-                    b = so.GetLocalBoundingBox();
-                else
-                    b.Contain(so.GetLocalBoundingBox());
-            }
-            return b;
-        }
-
-
-
-
         public static GOWrapperSO CombineAnySOs(SceneObject s1, SceneObject s2, bool bDeleteExisting = true)
         {
             FScene scene = s1.GetScene();
@@ -149,27 +133,8 @@ namespace f3
                 scene.Deselect(s2);
 
             fGameObject parentGO = GameObjectFactory.CreateParentGO("combined");
-
-            fGameObject copy1 = GameObjectFactory.Duplicate(s1.RootGameObject);
-            fGameObject copy2 = GameObjectFactory.Duplicate(s2.RootGameObject);
-
-
-            // if inputs are DMeshSOs, they do not have colliders, which we will need...
-            if (s1 is DMeshSO) {
-                foreach (var go in copy1.Children()) {
-                    if (go.GetComponent<MeshFilter>() != null && go.GetComponent<MeshCollider>() == null)
-                        go.AddComponent<MeshCollider>();
-                }
-            }
-            if (s2 is DMeshSO) {
-                foreach (var go in copy2.Children()) {
-                    if (go.GetComponent<MeshFilter>() != null && go.GetComponent<MeshCollider>() == null)
-                        go.AddComponent<MeshCollider>();
-                }
-            }
-
-            parentGO.AddChild(copy1, true);
-            parentGO.AddChild(copy2, true);
+            GOWrapperSO.AppendSOGeometry(parentGO, s1, true);
+            GOWrapperSO.AppendSOGeometry(parentGO, s2, true);
 
             GOWrapperSO wrapperSO = new GOWrapperSO() { AllowMaterialChanges = false };
             wrapperSO.Create(parentGO);
@@ -221,7 +186,7 @@ namespace f3
             Frame3f f2 = append.GetLocalFrame(CoordSpace.ObjectCoords);
             Vector3f scale2 = append.GetLocalScale();
 
-            DMesh3 mesh1 = appendTo.Mesh;
+            bool mesh1HasVtxNormals = appendTo.Mesh.HasVertexNormals;
 
             DMesh3 mesh2 = append.Mesh;
             foreach ( int vid in mesh2.VertexIndices() ) {
@@ -236,7 +201,7 @@ namespace f3
                 v2in1 /= scale1;
                 mesh2.SetVertex(vid, v2in1);
 
-                if (mesh1.HasVertexNormals && mesh2.HasVertexNormals) {
+                if (mesh1HasVtxNormals && mesh2.HasVertexNormals) {
                     Vector3f n = mesh2.GetVertexNormal(vid);
                     Vector3f ns = f2.FromFrameV(n);
                     Vector3f ns2 = f1.ToFrameV(ns);
@@ -244,10 +209,10 @@ namespace f3
                 }
             }
 
-            MeshEditor editor = new MeshEditor(mesh1);
-            editor.AppendMesh(mesh2);
-
-            appendTo.NotifyMeshEdited();
+            appendTo.EditAndUpdateMesh( (mesh1) => {
+                MeshEditor editor = new MeshEditor(mesh1);
+                editor.AppendMesh(mesh2);
+            }, GeometryEditTypes.ArbitraryEdit);
 
             // [TODO] change record!
 
@@ -287,14 +252,24 @@ namespace f3
         {
             return so.RootGameObject.IsVisible();
         }
-
+        public static List<T> FindObjectsOfType<T>(IEnumerable<SceneObject> objects, bool bVisibleOnly = false) where T : class 
+        {
+            List<T> result = new List<T>();
+            foreach ( var obj in objects ) {
+                if (obj is T) {
+                    if (bVisibleOnly == false || IsVisible(obj))
+                        result.Add(obj as T);
+                }
+            }
+            return result;
+        }
 
 
         public static void DestroySO(SceneObject so)
         {
             so.RootGameObject.SetParent(null);
             so.SetScene(null);
-            UnityEngine.Object.Destroy(so.RootGameObject);
+            so.RootGameObject.Destroy();
         }
 
 
@@ -332,11 +307,13 @@ namespace f3
 	{
 		public Vector3f hitPos;
         public Vector3f hitNormal;
+        public int hitIndex;
 		public float fHitDist;
 
 		public RayHit() {
             fHitDist = float.PositiveInfinity;
-		}
+            hitIndex = -1;
+        }
 
 		public bool IsValid {
 			get { return fHitDist < float.PositiveInfinity; }
@@ -345,7 +322,7 @@ namespace f3
 
 	public class GameObjectRayHit : RayHit
 	{
-		public GameObject hitGO;
+		public fGameObject hitGO;
 	}
 
 
@@ -359,14 +336,16 @@ namespace f3
 		public SORayHit(GameObjectRayHit init, SceneObject so) {
 			hitPos = init.hitPos;
             hitNormal = init.hitNormal;
+            hitIndex = init.hitIndex;
 			fHitDist = init.fHitDist;
 			hitGO = init.hitGO;
 			hitSO = so;
 		}
         public SORayHit(AnyRayHit init) {
-            Debug.Assert(init.eType == HitType.SceneObjectHit);
+            Util.gDevAssert(init.eType == HitType.SceneObjectHit);
             hitPos = init.hitPos;
             hitNormal = init.hitNormal;
+            hitIndex = init.hitIndex;
             fHitDist = init.fHitDist;
             hitGO = init.hitGO;
             hitSO = init.hitSO;
@@ -383,15 +362,17 @@ namespace f3
 		public UIRayHit(GameObjectRayHit init, SceneUIElement ui) {
 			hitPos = init.hitPos;
             hitNormal = init.hitNormal;
+            hitIndex = init.hitIndex;
             fHitDist = init.fHitDist;
 			hitGO = init.hitGO;
 			hitUI = ui;
 		}
         public UIRayHit(AnyRayHit init)
         {
-            Debug.Assert(init.eType == HitType.SceneUIElementHit);
+            Util.gDevAssert(init.eType == HitType.SceneUIElementHit);
             hitPos = init.hitPos;
             hitNormal = init.hitNormal;
+            hitIndex = init.hitIndex;
             fHitDist = init.fHitDist;
             hitGO = init.hitGO;
             hitUI = init.hitUI;
@@ -418,6 +399,7 @@ namespace f3
 		public AnyRayHit(GameObjectRayHit init, SceneObject so) {
 			hitPos = init.hitPos;
             hitNormal = init.hitNormal;
+            hitIndex = init.hitIndex;
             fHitDist = init.fHitDist;
 			hitGO = init.hitGO;
 			eType = HitType.SceneObjectHit;
@@ -426,6 +408,7 @@ namespace f3
 		public AnyRayHit(SORayHit init) {
 			hitPos = init.hitPos;
             hitNormal = init.hitNormal;
+            hitIndex = init.hitIndex;
             fHitDist = init.fHitDist;
 			hitGO = init.hitGO;
 			eType = HitType.SceneObjectHit;
@@ -434,6 +417,7 @@ namespace f3
 		public AnyRayHit(GameObjectRayHit init, SceneUIElement ui) {
 			hitPos = init.hitPos;
             hitNormal = init.hitNormal;
+            hitIndex = init.hitIndex;
             fHitDist = init.fHitDist;
 			hitGO = init.hitGO;
 			eType = HitType.SceneUIElementHit;
@@ -442,6 +426,7 @@ namespace f3
 		public AnyRayHit(UIRayHit init) {
 			hitPos = init.hitPos;
             hitNormal = init.hitNormal;
+            hitIndex = init.hitIndex;
             fHitDist = init.fHitDist;
 			hitGO = init.hitGO;
 			eType = HitType.SceneUIElementHit;
@@ -449,9 +434,10 @@ namespace f3
 		}
         public AnyRayHit(GameObjectRayHit init, HitType eType)
         {
-            Debug.Assert(eType == HitType.BoundsObjectHit);
+            Util.gDevAssert(eType == HitType.BoundsObjectHit);
             hitPos = init.hitPos;
             hitNormal = init.hitNormal;
+            hitIndex = init.hitIndex;
             fHitDist = init.fHitDist;
             hitGO = init.hitGO;
             this.eType = eType;

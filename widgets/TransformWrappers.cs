@@ -10,7 +10,7 @@ namespace f3
         void BeginTransformation();
 
         // returns true if changes were emitted
-        bool DoneTransformation();
+        bool DoneTransformation(bool bEmitChange);
 
         SceneObject Target { get; }
     }
@@ -51,10 +51,16 @@ namespace f3
             }
         }
 
-        virtual public bool DoneTransformation()
+        virtual public bool DoneTransformation(bool bEmitChange)
         {
             curChange.parentAfter = GetLocalFrame(CoordSpace.SceneCoords);
             curChange.parentScaleAfter = GetLocalScale();
+
+            // discard this transformation if nothing happened
+            if (curChange.parentBefore.EpsilonEqual(curChange.parentAfter, MathUtil.ZeroTolerancef) &&
+                 curChange.parentScaleBefore.EpsilonEqual(curChange.parentScaleAfter, MathUtil.ZeroTolerancef))
+                return false;
+
             if (target.IsTemporary) {
                 curChange.after = new List<Frame3f>();
                 curChange.scaleAfter = new List<Vector3f>();
@@ -63,7 +69,9 @@ namespace f3
                     curChange.scaleAfter.Add(UnityUtil.GetFreeLocalScale(so.RootGameObject));
                 }
             }
-            target.GetScene().History.PushChange(curChange, true);
+
+            if (bEmitChange)
+                target.GetScene().History.PushChange(curChange, true);
             curChange = null;
             return true;
         }
@@ -80,9 +88,9 @@ namespace f3
         {
             base.BeginTransformation();
         }
-        override public bool DoneTransformation()
+        override public bool DoneTransformation(bool bEmitChange)
         {
-            return base.DoneTransformation();
+            return base.DoneTransformation(bEmitChange);
         }
         override public Frame3f GetLocalFrame(CoordSpace eSpace)
         {
@@ -136,9 +144,9 @@ namespace f3
             objectFrame = target.GetLocalFrame(CoordSpace.ObjectCoords);
             curRotation = Quaternionf.Identity;
         }
-        override public bool DoneTransformation()
+        override public bool DoneTransformation(bool bEmitChange)
         {
-            bool bResult = base.DoneTransformation();
+            bool bResult = base.DoneTransformation(bEmitChange);
             curRotation = Quaternionf.Identity;
             return bResult;
         }

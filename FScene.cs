@@ -31,6 +31,7 @@ namespace f3
 
 
         ChangeHistory history;
+        List<ChangeHistory> history_stack;
         public ChangeHistory History { get { return history; } }
 
         public SORegistry TypeRegistry { get; set; }
@@ -56,6 +57,8 @@ namespace f3
         fGameObject sceneRoot;
         fGameObject scene_objects;
         fGameObject transient_objects;
+        fGameObject lighting_objects;
+        fGameObject bounds_objects;
 
 
         List<SceneObject> vObjects;
@@ -92,29 +95,10 @@ namespace f3
             this.context = context;
 
             history = new ChangeHistory();
+            history_stack = new List<ChangeHistory>();
             TypeRegistry = new SORegistry();
 
-            vObjects = new List<SceneObject>();
-            vSelected = new List<SceneObject>();
-            vUIElements = new List<SceneUIElement>();
-            vBoundsObjects = new List<fGameObject>();
-            ObjectAnimator = new GenericAnimator();
-            LinkManager = new SOLinkManager(this);
-
-            sceneRoot = GameObjectFactory.CreateParentGO("Scene");
-            // for animation playbacks
-            sceneRoot.AddComponent<SceneAnimator>().Scene = this;
-            sceneRoot.AddComponent<UnityPerFrameAnimationBehavior>().Animator = ObjectAnimator;
-
-            transient_objects = GameObjectFactory.CreateParentGO("transient");
-            sceneRoot.AddChild(transient_objects, false);
-
-            scene_objects = GameObjectFactory.CreateParentGO("scene_objects");
-            sceneRoot.AddChild(scene_objects, false);
-
-            deleted_objects = GameObjectFactory.CreateParentGO("deleted_objects");
-            sceneRoot.AddChild(deleted_objects, false);
-            vDeleted = new List<SceneObject>();
+            initialize_scene_root();
 
             // initialize materials
             DefaultSOMaterial = new SOMaterial() {
@@ -148,10 +132,41 @@ namespace f3
 
             SelectedMaterial = MaterialUtil.CreateStandardMaterial(ColorUtil.SelectionGold);
             FrameMaterial = MaterialUtil.CreateStandardMaterial(ColorUtil.DarkGrey);
-            PivotMaterial = MaterialUtil.ToUnityMaterial(PivotSOMaterial);
+            PivotMaterial = MaterialUtil.ToMaterialf(PivotSOMaterial);
 
             defaultPrimitiveType = SOTypes.Cylinder;
         }
+        void initialize_scene_root()
+        {
+            vObjects = new List<SceneObject>();
+            vSelected = new List<SceneObject>();
+            vUIElements = new List<SceneUIElement>();
+            vBoundsObjects = new List<fGameObject>();
+            ObjectAnimator = new GenericAnimator();
+            LinkManager = new SOLinkManager(this);
+            vDeleted = new List<SceneObject>();
+
+            sceneRoot = GameObjectFactory.CreateParentGO("Scene");
+            // for animation playbacks
+            sceneRoot.AddComponent<UnityPerFrameAnimationBehavior>().Animator = ObjectAnimator;
+
+            transient_objects = GameObjectFactory.CreateParentGO("transient");
+            sceneRoot.AddChild(transient_objects, false);
+
+            lighting_objects = GameObjectFactory.CreateParentGO("lighting_objects");
+            sceneRoot.AddChild(lighting_objects, false);
+
+            bounds_objects = GameObjectFactory.CreateParentGO("bounds_objects");
+            sceneRoot.AddChild(bounds_objects, false);
+
+            scene_objects = GameObjectFactory.CreateParentGO("scene_objects");
+            sceneRoot.AddChild(scene_objects, false);
+
+            deleted_objects = GameObjectFactory.CreateParentGO("deleted_objects");
+            sceneRoot.AddChild(deleted_objects, false);
+        }
+
+
 
         public FContext Context {
             get { return this.context; }
@@ -172,6 +187,13 @@ namespace f3
             get { return transient_objects; }
         }
 
+        /// <summary>
+        /// parent for lights that should move with scene
+        /// </summary>
+        public fGameObject LightingObjectsParent {
+            get { return lighting_objects; }
+        }
+
 
         public double CurrentTime
         {
@@ -188,11 +210,6 @@ namespace f3
             }
         }
 
-        public SceneAnimator AnimationController {
-            get { return sceneRoot.GetComponent<SceneAnimator>(); }
-        }
-
-
         public event TimeChangedHandler TimeChangedEvent;
         public event SceneSelectionChangedHandler SelectionChangedEvent;
         public event SceneModifiedHandler ChangedEvent;
@@ -208,13 +225,101 @@ namespace f3
 
 
 
-        // discard existing history
-        public void ClearHistory()
+        public void Reset(bool bKeepBoundsObjects = true, bool bKeepLighting = true)
         {
+            ClearHistory();
+
+            ClearSelection();
+            RemoveAllSceneObjects();
+            foreach ( var so in vDeleted ) {
+                so.Disconnect(true);
+                so.RootGameObject.Destroy();
+            }
+            vDeleted.Clear();
+
+            RemoveAllUIElements();
+
+            LinkManager.RemoveAllLinks();
+
+            SetCurrentTime(0);
+            SelectionMask = null;
+
+            // save bounds objects
+            var save_bounds = vBoundsObjects;
+            fGameObject boundsGO = null;
+            if (bKeepBoundsObjects) {
+                boundsGO = bounds_objects;
+                boundsGO.SetParent(null, true);
+            }
+
+            // save lighting objects
+            fGameObject lightingGO = null;
+            if ( bKeepLighting ) {
+                lightingGO = lighting_objects;
+                lightingGO.SetParent(null, true);
+            }
+
+            // save camera
+            CameraState camera_state = ActiveCamera.Manipulator().GetCurrentState(this);
+
+            // make sure we get rid of any cruft
+            sceneRoot.Destroy();
+
+            // rebuild scene
+            initialize_scene_root();
+
+            // restore camera
+            ActiveCamera.Manipulator().SetCurrentSceneState(this, camera_state);
+
+            // restore bounds objects
+            if (bKeepBoundsObjects) {
+                bounds_objects.Destroy();
+                boundsGO.SetParent(sceneRoot, true);
+                bounds_objects = boundsGO;
+                vBoundsObjects = save_bounds;
+            }
+
+            // restore lighting objects
+            if ( bKeepLighting ) {
+                lighting_objects.Destroy();
+                lightingGO.SetParent(sceneRoot, true);
+                lighting_objects = lightingGO;
+            }
+        }
+
+
+        /// <summary>
+        /// Discard current history
+        /// </summary>
+        public void ClearHistory(bool bAllStacks = true)
+        {
+            history.Clear();
+            history_stack.Clear();
+        }
+
+        /// <summary>
+        /// Add new history sequence to stack
+        /// </summary>
+        public void PushHistoryStream()
+        {
+            history_stack.Add(history);
             history = new ChangeHistory();
         }
 
 
+        /// <summary>
+        /// Pop history sequence stack
+        /// </summary>
+        public void PopHistoryStream()
+        {
+            if (history_stack.Count == 0)
+                throw new InvalidOperationException("Scene.PopHistoryStream: history stack is empty!");
+            // discard current history
+            history.Clear();
+            // take from stack
+            history = history_stack[history_stack.Count - 1];
+            history_stack.RemoveAt(history_stack.Count - 1);
+        }
 
 
         public SOType DefaultPrimitiveType
@@ -228,19 +333,39 @@ namespace f3
 
 
 
-        public AxisAlignedBox3f GetBoundingBox(bool bIncludeBoundsObjects)
+        /// <summary>
+        /// Compute AABB of scene in given space. Note that this will *not* be the same box
+        /// in world space as in scene space.
+        /// This computation ignores SOs with zero volume.
+        /// </summary>
+        public AxisAlignedBox3f GetBoundingBox(CoordSpace eSpace, bool bIncludeBoundsObjects)
         {
-            AxisAlignedBox3f b = UnityUtil.InvalidBounds;
+            if (eSpace == CoordSpace.ObjectCoords)
+                eSpace = CoordSpace.SceneCoords;
+
+            AxisAlignedBox3f b = AxisAlignedBox3f.Empty;
 
             foreach (SceneObject so in SceneObjects) {
-                b.Contain(so.GetTransformedBoundingBox());
+                Box3f sobox = so.GetBoundingBox(eSpace);
+                if (sobox.Volume > 0) {
+                    foreach (Vector3d v in sobox.VerticesItr())
+                        b.Contain(v);
+                }
             }
-            if (b == UnityUtil.InvalidBounds || bIncludeBoundsObjects)
-                UnityUtil.Combine(b, UnityUtil.GetBoundingBox(BoundsObjects));
-            if (b == UnityUtil.InvalidBounds) {
-                b.Contain(Vector3f.Zero);
-                b.Expand(1.0f);
+            if (bIncludeBoundsObjects) {
+                AxisAlignedBox3f sceneBounds =
+                    UnityUtil.GetGeometryBoundingBox(BoundsObjects, true);
+                if (sceneBounds.Volume > 0) {
+                    if (eSpace == CoordSpace.WorldCoords) {
+                        for (int k = 0; k < 8; ++k)
+                            b.Contain(ToWorldP(sceneBounds.Corner(k)));
+                    } else {
+                        b.Contain(sceneBounds);
+                    }
+                }
             }
+            if ( b.Volume == 0 ) 
+                b = new AxisAlignedBox3f(1.0f);
             return b;
         }
 
@@ -253,7 +378,7 @@ namespace f3
         public void AddWorldBoundsObject(fGameObject obj)
         {
             vBoundsObjects.Add(obj);
-            obj.SetParent(scene_objects, false);
+            obj.SetParent(bounds_objects, false);
         }
         public void RemoveWorldBoundsObject(fGameObject obj)
         {
@@ -278,7 +403,7 @@ namespace f3
         // add new SO to scene
         public void AddSceneObject(SceneObject so, bool bUseExistingWorldPos = false)
         {
-            DebugUtil.Log(1, "[Scene.AddSceneObject] adding {0}", so.Name);
+            DebugUtil.Log(4, "[Scene.AddSceneObject] adding {0}", so.Name);
 
             vObjects.Add(so);
             so.SetScene(this);
@@ -323,7 +448,15 @@ namespace f3
         // to internal Deleted set, so it can be recovered by undo.
         public void RemoveSceneObject(SceneObject so, bool bDestroy)
         {
-            DebugUtil.Log(1, "[Scene.AddSceneObject] removing {0} (destroy: {1})", so.Name, bDestroy);
+            if ( so.RootGameObject.IsDestroyed ) {
+                DebugUtil.Log(4, "[Scene.RemoveSceneObject] tried to remove SO but it is already destroyed.");
+                if (vSelected.Contains(so)) {
+                    Deselect(so);
+                }
+                vObjects.Remove(so);
+                return;
+            }
+            DebugUtil.Log(4, "[Scene.RemoveSceneObject] removing {0} (destroy: {1})", so.Name, bDestroy);
 
             if (vSelected.Contains(so)) {
                 Deselect(so);
@@ -363,13 +496,13 @@ namespace f3
             scene_objects.AddChild(so.RootGameObject, true);
             so.SetCurrentTime(currentTime);
             so.Connect(true);
+            OnSceneChanged(so, SceneChangeType.Added);
         }
         public void CullDeletedSceneObject(SceneObject so)
         {
-            so.Disconnect(true);
-
             if (vDeleted.Find((x) => x == so) == null)
                 return;
+            so.Disconnect(true);
             vDeleted.Remove(so);
             so.RootGameObject.SetParent(null);
             so.RootGameObject.Destroy();
@@ -401,7 +534,7 @@ namespace f3
             if (!is_selectable(s))
                 return false;
 
-			if (!IsSelected (s)) {
+			if ( IsSelected(s) == false || (bReplace && Selected.Count > 1) ) {
                 if (bReplace) {
                     if (DisableSelectionMaterial == false) {
                         foreach (var v in vSelected)
@@ -409,15 +542,17 @@ namespace f3
                     }
                     var list = new List<SceneObject>(vSelected);
                     vSelected.Clear();
-                    foreach (var so in list)
-                        DeselectedEvent?.Invoke(so);
+                    if (DeselectedEvent != null) {
+                        foreach (var so in list)
+                            DeselectedEvent(so);
+                    }
                 }
 
 				vSelected.Add(s);
                 if (DisableSelectionMaterial == false)
                     push_selection_material(s);
-
-                SelectedEvent?.Invoke(s);
+                if (SelectedEvent != null)
+                    SelectedEvent(s);
                 OnSelectionChanged(EventArgs.Empty);
 
 				return true;
@@ -437,7 +572,8 @@ namespace f3
             if ( DisableSelectionMaterial == false )
                 s.PopOverrideMaterial();        // assume we only pushed once!
 			vSelected.Remove(s);
-            DeselectedEvent?.Invoke(s);
+            if (DeselectedEvent != null)
+                DeselectedEvent(s);
 			OnSelectionChanged(EventArgs.Empty);
 		}
 
@@ -456,8 +592,10 @@ namespace f3
             }
             var list = vSelected;
 			vSelected = new List<SceneObject>();
-            foreach (var so in list)
-                DeselectedEvent?.Invoke(so);
+            if (DeselectedEvent != null) {
+                foreach (var so in list)
+                    DeselectedEvent(so);
+            }
 			OnSelectionChanged(EventArgs.Empty);
 		}
 
@@ -472,15 +610,39 @@ namespace f3
             return vObjects.Find( (x) => { return x.UUID == uuid; } );
         }
 
-		public List<T> FindSceneObjectsOfType<T>(bool bSelected = false) where T : class {
+        /// <summary>
+        /// Find SceneObjects of a given type. If bSelected == true, only considers selected
+        /// SOs. By default will descend into groups.
+        /// </summary>
+		public List<T> FindSceneObjectsOfType<T>(bool bSelected = false, bool bDescendGroups = true, bool bVisibleOnly = false) where T : class {
 			List<T> result = new List<T>();
             List<SceneObject> source = (bSelected) ? vSelected : vObjects;
             foreach ( var so in source ) {
-				if (so is T)
-					result.Add(so as T);
+                if (so is T) {
+                    if (bVisibleOnly == false || SceneUtil.IsVisible(so) )
+                        result.Add(so as T);
+                }
+                if (bDescendGroups && so is SOCollection)
+                    collect_type_in_children(so as SOCollection, bVisibleOnly, result);
 			}
 			return result;
 		}
+        private void collect_type_in_children<T>(SOCollection groupSO, bool bVisibleOnly, List<T> collection) where T : class
+        {
+            foreach ( var child in groupSO.GetChildren() ) {
+                if (child is T) {
+                    if (bVisibleOnly == false || SceneUtil.IsVisible(child))
+                        collection.Add(child as T);
+                }
+                if (child is SOCollection)
+                    collect_type_in_children(child as SOCollection, bVisibleOnly, collection);
+            }
+        }
+
+        /// <summary>
+        /// Enumerable over SceneObjects of a specific type.
+        /// Note: this function does not descend into groups. Use FindSceneObjectsOfType() if that matters.
+        /// </summary>
         public IEnumerable<T> SceneObjectsOfType<T>(bool bSelected = false) where T : class
         {
             List<SceneObject> source = (bSelected) ? vSelected : vObjects;
@@ -496,12 +658,12 @@ namespace f3
 			get { return vUIElements; }
 		}
 
-		public void AddUIElement(SceneUIElement e, bool bIsInLocalFrame = true) {
+		public void AddUIElement(SceneUIElement e, bool bIsInSceneFrame = true) {
 			vUIElements.Add (e);
             e.Parent = this;
 			if (e.RootGameObject != null) {
 				// assume gizmo transform is set to a local transform, so we want to apply current scene transform
-				e.RootGameObject.SetParent(sceneRoot, (bIsInLocalFrame == false));
+				e.RootGameObject.SetParent(sceneRoot, (bIsInSceneFrame == false));
 			}
 		}
 
@@ -567,11 +729,14 @@ namespace f3
 
         public bool FindSORayIntersection_PivotPriority(Ray3f ray, out SORayHit hit, Func<SceneObject, bool> filter = null)
         {
-            bool bHitPivot = HUDUtil.FindNearestRayIntersection(VisibleSceneObjects, ray, out hit, (s) => { return s is PivotSO; });
+            bool bHitPivot = HUDUtil.FindNearestRayIntersection(VisibleSceneObjects, ray, out hit, is_priority_pivot);
             if (bHitPivot)
                 return true;
             return HUDUtil.FindNearestRayIntersection(VisibleSceneObjects, ray, out hit,
                                 (SelectionMask == null) ? filter : mask_filter(filter));
+        }
+        protected static bool is_priority_pivot(SceneObject so) {
+            return so is PivotSO && (so as PivotSO).IsOverlaySO;
         }
 
 
@@ -726,7 +891,12 @@ namespace f3
             return SceneFrame.ToFrame(fWorldFrame).Scaled(1.0f / GetSceneScale());
         }
 
-
+        public Box3f ToWorldBox(Box3f box)
+        {
+            Frame3f f = new Frame3f(box.Center, box.AxisX, box.AxisY, box.AxisZ);
+            Frame3f fS = ToWorldFrame(f);
+            return new Box3f(fS.Origin, fS.X, fS.Y, fS.Z, GetSceneScale() * box.Extent);
+        }
 
 
 

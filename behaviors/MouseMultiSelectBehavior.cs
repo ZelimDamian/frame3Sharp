@@ -1,14 +1,30 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using g3;
 
 namespace f3
 {
+    /// <summary>
+    /// Mouse interaction behavior for SO selection.
+    /// left-click to select/deselect, left-shift-click to multiselect
+    /// </summary>
     public class MouseMultiSelectBehavior : StandardInputBehavior
     {
         protected FContext scene;
         protected SceneObject selectSO;
+
+        public bool EnableShiftModifier = true;
+        public bool EnableControlModifier = true;
+
+        /// <summary>
+        /// If this is true, PivotSO objects are selected first, even if they are "behind" other objects.
+        /// </summary>
+        public bool SelectPivotsFirst = true;
+
+        /// <summary>
+        /// set this to filter out objects
+        /// </summary>
+        public Func<SceneObject, bool> SelectionFilterF = null;
+
 
         public MouseMultiSelectBehavior(FContext scene)
         {
@@ -25,7 +41,7 @@ namespace f3
             selectSO = null;
             if (input.bLeftMousePressed) {
                 SORayHit rayHit;
-                if (scene.Scene.FindSORayIntersection(input.vMouseWorldRay, out rayHit))
+                if (FindSORayIntersection(input.vMouseWorldRay, out rayHit))
                     return CaptureRequest.Begin(this);
             }
             return CaptureRequest.Ignore;
@@ -35,7 +51,7 @@ namespace f3
         {
             selectSO = null;
             SORayHit rayHit;
-            if (scene.Scene.FindSORayIntersection(input.vMouseWorldRay, out rayHit)) {
+            if (FindSORayIntersection(input.vMouseWorldRay, out rayHit)) {
                 selectSO = rayHit.hitSO;
                 return Capture.Begin(this);
             }
@@ -49,7 +65,8 @@ namespace f3
 
                 SORayHit rayHit;
                 if ( selectSO != null && selectSO.FindRayIntersection(input.vMouseWorldRay, out rayHit)) {
-                    if (input.bShiftKeyDown) {
+                    if ( (EnableShiftModifier && input.bShiftKeyDown) 
+                        || (EnableControlModifier && input.bCtrlKeyDown) ) { 
                         if (scene.Scene.IsSelected(selectSO))
                             scene.Scene.Deselect(selectSO);
                         else
@@ -68,6 +85,14 @@ namespace f3
 
         public override Capture ForceEndCapture(InputState input, CaptureData data) {
             return Capture.End;
+        }
+
+
+        protected bool FindSORayIntersection(Ray3f ray, out SORayHit hit)
+        {
+            return (SelectPivotsFirst) ?
+                scene.Scene.FindSORayIntersection_PivotPriority(ray, out hit, SelectionFilterF) :
+                scene.Scene.FindSORayIntersection(ray, out hit, SelectionFilterF);
         }
     }
 }

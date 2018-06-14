@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -20,6 +20,9 @@ namespace f3 {
 
         // global events
         public event ContextWindowResizeEvent OnWindowResized;
+
+        // global state
+        public static bool WindowHasFocus = true;
 
 
         SceneOptions options;
@@ -201,6 +204,9 @@ namespace f3 {
             if ( FPlatform.IsUsingVR() || options.UseSystemMouseCursor == false )
 			    Cursor.lockState = CursorLockMode.Locked;
 
+            // initialize line rendering manager
+            LineRenderingManager.Initialize();
+
             // set hacky hackenstein global
             ActiveContext_HACK = this;
 
@@ -310,6 +316,12 @@ namespace f3 {
                     cap = captureLeft.element.UpdateCapture(input, captureLeft.data);
                 }catch ( Exception e ) {
                     DebugUtil.Log(2, "FContext.HandleInput_SpaceControllers: exception in left UpdateCapture! " + e.Message);
+                    captureLeft.element.ForceEndCapture(input, captureLeft.data);
+                    captureLeft = null;
+                    if (captureRight == captureLeft)
+                        captureRight = null;        // dual-capture
+                    if (FPlatform.InUnityEditor())
+                        throw;
                 }
                 inCapturingObjectCall = false;
                 if (cap.state == CaptureState.Continue) {
@@ -331,6 +343,10 @@ namespace f3 {
                     cap = captureRight.element.UpdateCapture(input, captureRight.data);
                 } catch (Exception e) {
                     DebugUtil.Log(2, "FContext.HandleInput_SpaceControllers: exception in right UpdateCapture! " + e.Message);
+                    captureRight.element.ForceEndCapture(input, captureRight.data);
+                    captureRight = null;
+                    if (FPlatform.InUnityEditor())
+                        throw;
                 }
                 inCapturingObjectCall = false;
                 if (cap.state == CaptureState.Continue) {
@@ -437,7 +453,7 @@ namespace f3 {
             // [RMS] not sure if this is 100% correct thing to do. We need to allow Platform UI
             // layer (eg like Unity ui) to consume mouse events before we see them. However this
             // only applies if they are "on top". It is a bit tricky...
-            if (FPlatformUI.IsConsumingMouseInput()) {
+            if (FPlatformUI.IsConsumingMouseInput() && captureTouch == null ) {
                 return;
             }
 
@@ -454,6 +470,10 @@ namespace f3 {
                     cap = captureTouch.element.UpdateCapture(input, captureTouch.data);
                 } catch (Exception e) {
                     DebugUtil.Log(2, "FContext.HandleInput_Touch: exception in UpdateCapture! " + e.Message);
+                    captureTouch.element.ForceEndCapture(input, captureTouch.data);
+                    captureTouch = null;
+                    if (FPlatform.InUnityEditor())
+                        throw;
                 }
                 inCapturingObjectCall = false;
                 if (cap.state == CaptureState.Continue) {
@@ -511,6 +531,10 @@ namespace f3 {
 
         void HandleInput_MouseOrGamepad()
         {
+            // ignore input if we do not have focus
+            if (WindowHasFocus == false)
+                return;
+
             // update mouse/gamepad cursor
             MouseController.Update();
 
@@ -526,7 +550,7 @@ namespace f3 {
             // [RMS] not sure if this is 100% correct thing to do. We need to allow Platform UI
             // layer (eg like Unity ui) to consume mouse events before we see them. However this
             // only applies if they are "on top". It is a bit tricky...
-            if ( FPlatformUI.IsConsumingMouseInput()) { 
+            if ( FPlatformUI.IsConsumingMouseInput() && captureMouse == null ) { 
                 return;
             }
 
@@ -559,6 +583,8 @@ namespace f3 {
                         cap = captureMouse.element.UpdateCapture(input, captureMouse.data);
                     } catch (Exception e) {
                         DebugUtil.Log(2, "FContext.HandleInput_MouseOrGamepad: exception in UpdateCapture! " + e.Message);
+                        captureMouse.element.ForceEndCapture(input, captureMouse.data);
+                        captureMouse = null;
                         if (FPlatform.InUnityEditor())
                             throw;
                     }
@@ -682,7 +708,7 @@ namespace f3 {
 
                 if ( captureMouse != null || captureTouch != null || captureLeft != null || captureRight != null ) {
                     if ( FPlatform.ShowingExternalPopup ) {
-                        throw new Exception("TerminateCapture: Need to complete capture bhefore showing external popup dialog. Use Context.RegisterNextFrameAction()");
+                        throw new Exception("TerminateCapture: Need to complete capture before showing external popup dialog. Use Context.RegisterNextFrameAction()");
                     }
                 }
                 TerminateCaptures(LastInputState);
@@ -692,6 +718,8 @@ namespace f3 {
                     ActiveCamera.SetTargetVisible(false);
                 }
             }
+
+            WindowHasFocus = bFocused;
         }
 
 
@@ -713,7 +741,7 @@ namespace f3 {
                 activeCockpit.InputBehaviors.OnSetChanged -= on_cockpit_behaviors_changed;
                 activeCockpit.OverrideBehaviors.OnSetChanged -= on_cockpit_behaviors_changed;
                 cockpitStack.Push(activeCockpit);
-                activeCockpit.RootGameObject.SetActive(false);
+                activeCockpit.RootGameObject.SetVisible(false);
             }
 
             Cockpit c = new Cockpit(this);
@@ -745,7 +773,7 @@ namespace f3 {
                 overrideBehaviors.Remove(activeCockpit.OverrideBehaviors);
                 activeCockpit.InputBehaviors.OnSetChanged -= on_cockpit_behaviors_changed;
                 activeCockpit.OverrideBehaviors.OnSetChanged -= on_cockpit_behaviors_changed;
-                activeCockpit.RootGameObject.SetActive(false);
+                activeCockpit.RootGameObject.SetVisible(false);
                 if (bDestroy)
                     activeCockpit.Destroy();
                 activeCockpit = null;
@@ -753,7 +781,7 @@ namespace f3 {
 
             activeCockpit = cockpitStack.Pop();
             if (activeCockpit != null) {
-                activeCockpit.RootGameObject.SetActive(true);
+                activeCockpit.RootGameObject.SetVisible(true);
                 inputBehaviors.Add(activeCockpit.InputBehaviors, "active_cockpit");
                 overrideBehaviors.Add(activeCockpit.OverrideBehaviors, "active_cockpit_override");
                 activeCockpit.InputBehaviors.OnSetChanged += on_cockpit_behaviors_changed;
@@ -781,6 +809,8 @@ namespace f3 {
         {
             List<InputBehavior> removed = inputBehaviors.RemoveByGroup("active_tool");
             TerminateIfCapturing(removed, LastInputState);
+
+            inputBehaviors.Add(behaviors, "active_tool");
         }
 
 
@@ -856,12 +886,7 @@ namespace f3 {
             if (ToolManager.HasActiveTool(ToolSide.Right))
                 ToolManager.DeactivateTool(ToolSide.Right);
 
-            Scene.ClearHistory();
-            Scene.ClearSelection();
-            Scene.RemoveAllSceneObjects();
-            Scene.RemoveAllUIElements();
-            Scene.SetCurrentTime(0);
-            Scene.SelectionMask = null;
+            Scene.Reset();
 
             UniqueNames.Reset();
 
@@ -889,7 +914,7 @@ namespace f3 {
                 resetAction();
         }
 
-        public void ScaleView(Vector3 vCenterW, float fRadiusW )
+        public void ScaleView(Vector3f vCenterW, float fMeterSizeW )
         {
             //Vector3f camTarget = ActiveCamera.GetTarget();
             //Vector3f localTarget = Scene.WorldFrame.ToFrameP(camTarget);
@@ -901,7 +926,7 @@ namespace f3 {
             float fCurScale = Scene.GetSceneScale();
 
             Frame3f cockpitF = ActiveCockpit.GetLevelViewFrame(CoordSpace.WorldCoords);
-            float fScale = 1.0f / fRadiusW;
+            float fScale = 1.0f / fMeterSizeW;
             vDeltaOrig *= fScale;
             Frame3f deskF = cockpitF.Translated(1.2f, 2).Translated(-0.5f, 1).Translated(-vDeltaOrig);
             Scene.SceneFrame = deskF;
@@ -1004,6 +1029,19 @@ namespace f3 {
 
 
 
+
+        /*
+         * per-frame actions. This is mainly intended for single-shot actions, like
+         * you need X to happen next frame. There is also every-frame actions, but
+         * they cannot currently be removed, so be careful. 
+         * 
+         * In the 'next frame', these functions run before input handling or PreRender().
+         * 
+         * Register functions below are all thread-safe. You can also safely
+         * add a next-frame-action from inside one, it still won't run until the next frame,
+         * or affect the actions being run on current frame.
+         */
+
         /// <summary>
         /// Add an Action that will be run once, in the next frame, and then discarded
         /// </summary>
@@ -1022,18 +1060,50 @@ namespace f3 {
             }
         }
 
+        /// <summary>
+        /// Add an Action that will be run in N frames. Particularly useful for the case
+        /// where you want to do something but you have to wait until after the next-frame's
+        /// update loop (ie N = 2)
+        /// </summary>
+        public void RegisterNthFrameAction(int nFrames, Action F) {
+            Action actionF = null;
+            actionF = () => {
+                if (--nFrames == 0)
+                    F();
+                else
+                    this.RegisterNextFrameAction(actionF);
+            };
+            RegisterNextFrameAction(actionF);
+        }
 
 
-        public void RegisterEveryFrameAction(Action F) {
+        /// <summary>
+        /// Add an action that will be run every frame, until forever.
+        /// </summary>
+        public void RegisterEveryFrameAction(string name, Action F) {
             lock (everyFrameActions) {
-                everyFrameActions.RegisterAction(F);
+                everyFrameActions.RegisterAction(name, F);
+            }
+        }
+
+        /// <summary>
+        /// remove an Every Frame Action
+        /// </summary>
+        public void DeregisterEveryFrameAction(string name) {
+            lock (everyFrameActions) {
+                everyFrameActions.RemoveAction(name);
             }
         }
 
 
 
+        /*
+         * Only one thing can control the keyboard at a time. Currently managing
+         * this here. Maybe not the right place?
+         */
 
-        public bool RequestTextEntry(ITextEntryTarget target)
+
+       public bool RequestTextEntry(ITextEntryTarget target)
        {
             if ( activeTextTarget != null ) {
                 activeTextTarget.OnEndTextEntry();

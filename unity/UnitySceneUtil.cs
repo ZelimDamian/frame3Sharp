@@ -26,8 +26,8 @@ namespace f3
                             var useMaterial = (overrideMaterial != null) ? overrideMaterial : material;
                             return gso.Create(UnityUtil.UnityMeshToDMesh(mesh, false), useMaterial);
                         } );
-            if ( bDestroyOriginal )
-                GameObject.Destroy(wrapGO);
+            if (bDestroyOriginal)
+                wrapGO.Destroy();
             return wrapperSO;
         }
 
@@ -165,6 +165,7 @@ namespace f3
             SceneObject newSO = (MakeSOFunc != null) ? 
                 MakeSOFunc(CombineMesh, scene.DefaultMeshSOMaterial)
                 : new DMeshSO().Create(CombineMesh, scene.DefaultMeshSOMaterial);
+            newSO.Name = go.name;
 
             if ( bAddToScene )
                 scene.AddSceneObject(newSO, false);

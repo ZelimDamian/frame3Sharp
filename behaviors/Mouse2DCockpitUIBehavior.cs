@@ -68,7 +68,7 @@ namespace f3
                 return Capture.End;
 
             } else {
-                DebugUtil.Log(2, "VRMouseUIBehavior.UpdateCapture: somehow ended up here without left mouse release!");
+                DebugUtil.Log(2, "Mouse2DCockpitUIBehavior.UpdateCapture: somehow ended up here without left mouse release!");
                 if ( pCapturing != null ) {
                     pCapturing.EndCapture(InputEvent.Mouse(input.ToOrthoLayerInput()));
                     pCapturing = null;
@@ -81,8 +81,10 @@ namespace f3
         public override Capture ForceEndCapture(InputState input, CaptureData data)
         {
             if (pCapturing != null) {
-                pCapturing.EndCapture(InputEvent.Mouse(input.ToOrthoLayerInput()));
+                // if we don't do this, and EndCapture throws, we end up in a loop of exceptions!
+                var temp = pCapturing;
                 pCapturing = null;
+                temp.EndCapture(InputEvent.Mouse(input.ToOrthoLayerInput()));
             }
             return Capture.End;
         }

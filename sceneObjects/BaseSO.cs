@@ -146,10 +146,16 @@ namespace f3
         }
 
 
+        virtual public bool ShadowsEnabled {
+            get { return false; }
+        }
         virtual public void DisableShadows() {
             throw new NotImplementedException("BaseSO.DisableShadows: must be implemented by subclasses");
         }
 
+        virtual public int Layer {
+            get { return RootGameObject.GetLayer(); }
+        }
         virtual public void SetLayer(int nLayer)
         {
             RootGameObject.SetLayer(nLayer);
@@ -161,11 +167,23 @@ namespace f3
         }
 
 
-        virtual public AxisAlignedBox3f GetTransformedBoundingBox() {
-            return UnityUtil.GetBoundingBox(RootGameObject);
+        virtual public Box3f GetBoundingBox(CoordSpace eSpace)
+        {
+            Box3f box = new Box3f(GetLocalBoundingBox());
+            if (eSpace == CoordSpace.ObjectCoords) {
+                return box;
+            } else if (eSpace == CoordSpace.SceneCoords) {
+                return SceneTransforms.ObjectToScene(this, box);
+            } else {
+                box = SceneTransforms.ObjectToScene(this, box);
+                return GetScene().ToWorldBox(box);
+            }
         }
-        virtual public AxisAlignedBox3f GetLocalBoundingBox() {
-            return GetTransformedBoundingBox();
+        virtual public AxisAlignedBox3f GetLocalBoundingBox()
+        {
+            // [RMS] is this correct?
+            DebugUtil.Log("BaseSO.GetLocalBoundingBox: this bounding box may be incorrect...check this usage");
+            return UnityUtil.GetGeometryBoundingBox(RootGameObject, true);
         }
 
 

@@ -100,7 +100,7 @@ namespace f3
         static public float PixelScaleFactor = 1.0f;
 
         // multiplier on Cockpit.GetPixelScale() applied when running in editor.
-        static public float EditorPixelScaleFactor = 0.5f;
+        static public float EditorPixelScaleFactor = 1.0f;
 
 
 
@@ -239,7 +239,11 @@ namespace f3
         /// active BaseSceneConfig
         /// </summary>
         static public CoroutineExecutor CoroutineExec {
-            get { return coroutine_exec; }
+            get {
+                if (coroutine_exec == null)
+                    throw new Exception("FPlatform.CoroutineExec is null! Probably need to call BaseSceneConfig.Awake().");
+                return coroutine_exec;
+            }
             set { coroutine_exec = value; }
         }
         static CoroutineExecutor coroutine_exec;
@@ -256,6 +260,19 @@ namespace f3
             return System.IntPtr.Zero;
 #endif
         }
+
+
+
+        static public void SetWindowTitle(string text)
+        {
+#if UNITY_STANDALONE_WIN
+            IntPtr winPtr = GetActiveWindow();
+            if (winPtr != IntPtr.Zero)
+                SetWindowText(winPtr, text);
+#else
+#endif
+        }
+
 
 
 
@@ -290,6 +307,7 @@ namespace f3
         /// filterPatterns specified like this: new string[] { "*.stl", "*.obj" }
         /// Note that tinyfiledialogs does not support multiple save-types in save dialog
         /// </summary>
+        [System.Obsolete("This blocks Unity main thread and in 2017.3 this causes disasters. Use GetOpenFileName_Async() instead.")]
         static public string GetOpenFileName(string sDialogTitle, string sInitialPathAndFile, 
                 string[] filterPatterns, string sPatternDesc)
         {
@@ -352,6 +370,61 @@ namespace f3
         }
 
 
+
+
+
+        /// <summary>
+        /// Show an open-file dialog and with the provided file types. 
+        /// Returns path to selected file, or null if Cancel is clicked.
+        /// Uses system file dialog, via tinyfiledialogs.
+        /// filterPatterns specified like this: new string[] { "*.stl", "*.obj" }
+        /// Note that tinyfiledialogs does not support multiple save-types in save dialog
+        /// </summary>
+        static public void GetOpenFileName_Async(string sDialogTitle, string sInitialPathAndFile,
+                string[] filterPatterns, string sPatternDesc, Action<string> OnSelectedF, Action OnCanceledF = null )
+        {
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX)
+
+            ThreadPool.QueueUserWorkItem(delegate {
+
+                // tinyfd changes CWD (?), and this makes Unity unhappy
+                string curDirectory = Directory.GetCurrentDirectory();
+
+                IntPtr p = tinyfd_openFileDialog(sDialogTitle, sInitialPathAndFile,
+                    filterPatterns.Length, filterPatterns, sPatternDesc, 0);
+
+                try {
+                    Directory.SetCurrentDirectory(curDirectory);
+                } catch (Exception) {
+                    // [RMS] sometimes this results in an exception? I am confused...
+                }
+
+                if (p == IntPtr.Zero) {
+                    if (OnCanceledF != null)
+                        ThreadMailbox.PostToMainThread(OnCanceledF);
+                    return;
+                }
+
+                string s = stringFromChar(p);
+                ThreadMailbox.PostToMainThread(() => {
+                    OnSelectedF(s);
+                });
+            });
+
+#else
+            // [TODO] implement
+#endif
+        }
+
+
+
+
+
+
+
+
+
+
         /// <summary>
         /// Show a save-file dialog and with the provided file types. 
         /// Returns path to selected file, or null if Cancel is clicked.
@@ -359,6 +432,7 @@ namespace f3
         /// filterPatterns specified like this: new string[] { "*.stl", "*.obj" }
         /// Note that tinyfiledialogs does not support multiple save-types in save dialog
         /// </summary>
+        [System.Obsolete("This blocks Unity main thread and in 2017.3 this causes disasters. Use GetSaveFileName_Async() instead.")]
         static public string GetSaveFileName(string sDialogTitle, string sInitialPathAndFile, 
                 string[] filterPatterns, string sPatternDesc)
         {
@@ -393,11 +467,65 @@ namespace f3
 
 
 
+
+        /// <summary>
+        /// Show a save-file dialog and with the provided file types. 
+        /// Returns path to selected file, or null if Cancel is clicked.
+        /// Uses system file dialog, via tinyfiledialogs.
+        /// filterPatterns specified like this: new string[] { "*.stl", "*.obj" }
+        /// Note that tinyfiledialogs does not support multiple save-types in save dialog
+        /// </summary>
+        static public void GetSaveFileName_Async(string sDialogTitle, string sInitialPathAndFile,
+                string[] filterPatterns, string sPatternDesc, Action<string> OnSelectedF, Action OnCanceledF = null)
+        {
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX)
+
+            ThreadPool.QueueUserWorkItem(delegate {
+
+                // tinyfd changes CWD (?), and this makes Unity unhappy
+                string curDirectory = Directory.GetCurrentDirectory();
+
+                IntPtr p = tinyfd_saveFileDialog(sDialogTitle, sInitialPathAndFile,
+                    filterPatterns.Length, filterPatterns, sPatternDesc);
+
+                try {
+                    Directory.SetCurrentDirectory(curDirectory);
+                } catch (Exception) {
+                    // [RMS] sometimes this results in an exception? I am confused...
+                }
+
+                if (p == IntPtr.Zero) {
+                    if (OnCanceledF != null) 
+                        ThreadMailbox.PostToMainThread(OnCanceledF);
+                    return;
+                }
+
+                string s = stringFromChar(p);
+                ThreadMailbox.PostToMainThread(() => {
+                    OnSelectedF(s);
+                });
+            });
+
+#else
+            // [TODO] implement
+#endif
+        }
+
+
+
+
+
         // platform-specific interop functions
 
 #if UNITY_STANDALONE_WIN
         [DllImport("user32.dll")]
         private static extern System.IntPtr GetActiveWindow();
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowText")]
+        public static extern bool SetWindowText(System.IntPtr hwnd, System.String lpString);
+
+        [DllImport("user32.dll", EntryPoint = "FindWindow")]
+        public static extern System.IntPtr FindWindow(System.String className, System.String windowName);
 #endif
 #if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_EDITOR)
 
@@ -425,6 +553,43 @@ namespace f3
         private static string stringFromChar(IntPtr ptr) {
             return Marshal.PtrToStringAnsi(ptr);
         }
+
+
+
+
+
+
+        /*
+         * Preferences API wrapper
+         */
+
+        public static void DeletePrefsKey(string key) {
+            PlayerPrefs.DeleteKey(key);
+        }
+        public static bool HasPrefsKey(string key) {
+            return PlayerPrefs.HasKey(key);
+        }
+
+        public static float GetPrefsFloat(string key, float defaultValue) {
+            return PlayerPrefs.GetFloat(key, defaultValue);
+        }
+        public static int GetPrefsInt(string key, int defaultValue) {
+            return PlayerPrefs.GetInt(key, defaultValue);
+        }
+        public static string GetPrefsString(string key, string defaultValue) {
+            return PlayerPrefs.GetString(key, defaultValue);
+        }
+
+        public static void SetPrefsFloat(string key, float value) {
+            PlayerPrefs.SetFloat(key, value); PlayerPrefs.Save();
+        }
+        public static void SetPrefsInt(string key, int value) {
+            PlayerPrefs.SetInt(key, value); PlayerPrefs.Save();
+        }
+        public static void SetPrefsString(string key, string value) {
+            PlayerPrefs.SetString(key, value); PlayerPrefs.Save();
+        }
+
 
 
 

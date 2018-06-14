@@ -10,9 +10,14 @@ namespace f3
         public FScene scene;
         public SceneObject so;
 
+        public Action<SceneObject> OnAddedF = null;
+        public Action<SceneObject> OnRemovedF = null;
+
         public override string Identifier() { return "DeleteSOChange"; }
 
         public override OpStatus Apply() {
+            if (OnRemovedF != null)
+                OnRemovedF(so);
             // false here means we keep this GO around
             scene.RemoveSceneObject(so, false);
             return OpStatus.Success;        
@@ -20,11 +25,14 @@ namespace f3
 
         public override OpStatus Revert() {
             scene.RestoreDeletedSceneObject(so);
+            if (OnAddedF != null)
+                OnAddedF(so);
             return OpStatus.Success;
         }
 
         public override OpStatus Cull() {
-            scene.CullDeletedSceneObject(so);
+            if (scene.HasDeletedSceneObject(so))
+                scene.CullDeletedSceneObject(so);
             return OpStatus.Success;
         }
     }
@@ -41,6 +49,9 @@ namespace f3
         public SceneObject so;
         public bool bKeepWorldPosition = false;
 
+        public Action<SceneObject> OnAddedF = null;
+        public Action<SceneObject> OnRemovedF = null;
+
         public override string Identifier() { return "AddSOChange"; }
 
         public override OpStatus Apply() {
@@ -48,10 +59,14 @@ namespace f3
                 scene.RestoreDeletedSceneObject(so);
             else
                 scene.AddSceneObject(so, bKeepWorldPosition);
+            if (OnAddedF != null)
+                OnAddedF(so);
             return OpStatus.Success;
         }
 
         public override OpStatus Revert() {
+            if (OnRemovedF != null)
+                OnRemovedF(so);
             scene.RemoveSceneObject(so, false);
             return OpStatus.Success;
         }
@@ -98,6 +113,9 @@ namespace f3
         public Frame3f before, after;
         public CoordSpace space;
 
+        public Action<TransformSOChange> OnApplyF = null;
+        public Action<TransformSOChange> OnRevertF = null;
+
         public override string Identifier() { return "TransformSOChange"; }
 
         public TransformSOChange() {
@@ -119,10 +137,14 @@ namespace f3
 
         public override OpStatus Apply() {
             so.SetLocalFrame(after, space);
+            if (OnApplyF != null)
+                OnApplyF(this);
             return OpStatus.Success;
         }
         public override OpStatus Revert() {
             so.SetLocalFrame(before, space);
+            if (OnRevertF != null)
+                OnRevertF(this);
             return OpStatus.Success;
         }
         public override OpStatus Cull() {
@@ -234,7 +256,8 @@ namespace f3
             return OpStatus.Success;
         }
         public override OpStatus Cull() {
-            Scene.CullDeletedSceneObject(created_group);
+            if (Scene.HasDeletedSceneObject(created_group))
+                Scene.CullDeletedSceneObject(created_group);
             return OpStatus.Success;
         }
     }

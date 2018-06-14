@@ -25,8 +25,15 @@ namespace f3
         public fCamera Camera;
 
         // camera stuff
-        public float turntableAzimuth = 0;
-        public float turntableAltitude = 0;
+        protected float turntableAzimuthD = 0;
+        protected float turntableAltitudeD = 0;
+
+        public float TurntableAzimuthD {
+            get { return turntableAzimuthD; }
+        }
+        public float TurntableAltitudeD {
+            get { return turntableAltitudeD; }
+        }
 
         public CameraManipulator()
         {
@@ -91,21 +98,21 @@ namespace f3
             Vector3f up = Vector3f.AxisY;
             Vector3f right = cam.Right();
 
-            scene.RootGameObject.RotateAroundD(rotTarget, right, -turntableAltitude);
-            scene.RootGameObject.RotateAroundD(rotTarget, up, -turntableAzimuth);
+            scene.RootGameObject.RotateAroundD(rotTarget, right, -turntableAltitudeD);
+            scene.RootGameObject.RotateAroundD(rotTarget, up, -turntableAzimuthD);
 
             if (bSet) {
-                turntableAzimuth = deltaAzimuth;
-                turntableAltitude = deltaAltitude;
+                turntableAzimuthD = deltaAzimuth;
+                turntableAltitudeD = deltaAltitude;
             } else {
-                turntableAzimuth -= deltaAzimuth;
-                turntableAltitude += deltaAltitude;
+                turntableAzimuthD -= deltaAzimuth;
+                turntableAltitudeD += deltaAltitude;
             }
-            turntableAzimuth = (float)MathUtil.ClampAngleDeg(Convert.ToDouble(turntableAzimuth), -360d, 360d);
-            turntableAltitude = Mathf.Clamp(turntableAltitude, -89.9f, 89.9f);
+            turntableAzimuthD = (float)MathUtil.ClampAngleDeg(Convert.ToDouble(turntableAzimuthD), -360d, 360d);
+            turntableAltitudeD = Mathf.Clamp(turntableAltitudeD, -89.9f, 89.9f);
 
-            scene.RootGameObject.RotateAroundD(rotTarget, up, turntableAzimuth);
-            scene.RootGameObject.RotateAroundD(rotTarget, right, turntableAltitude);
+            scene.RootGameObject.RotateAroundD(rotTarget, up, turntableAzimuthD);
+            scene.RootGameObject.RotateAroundD(rotTarget, right, turntableAltitudeD);
         }
 
 
@@ -116,16 +123,16 @@ namespace f3
 
             Vector3f rotTarget = Camera.GetTarget();
             if ( bApply ) {
-                scene.RootGameObject.RotateAroundD(rotTarget, right, -turntableAltitude);
-                scene.RootGameObject.RotateAroundD(rotTarget, up, -turntableAzimuth);
+                scene.RootGameObject.RotateAroundD(rotTarget, right, -turntableAltitudeD);
+                scene.RootGameObject.RotateAroundD(rotTarget, up, -turntableAzimuthD);
             }
             if (bAzimuth == true)
-                turntableAzimuth = 0.0f;
+                turntableAzimuthD = 0.0f;
             if (bAltitude == true)
-                turntableAltitude = 0.0f;
+                turntableAltitudeD = 0.0f;
             if ( bApply ) {
-                scene.RootGameObject.RotateAroundD(rotTarget, up, turntableAzimuth);
-                scene.RootGameObject.RotateAroundD(rotTarget, right, turntableAltitude);
+                scene.RootGameObject.RotateAroundD(rotTarget, up, turntableAzimuthD);
+                scene.RootGameObject.RotateAroundD(rotTarget, right, turntableAltitudeD);
             }
         }
 
@@ -138,6 +145,9 @@ namespace f3
             SceneOrbit(scene, Camera, deltaAzimuth, deltaAltitude);
             Camera.SetTarget(targetPos);
         }
+
+
+
 
 
 
@@ -194,24 +204,47 @@ namespace f3
         }
 
 
-        public void ScenePanFocus(FScene scene, fCamera camera, Vector3f focusPoint, bool bAnimated)
+        [System.Obsolete("This function does not make sense. Use PanFocusOnScenePoint or Animator().AnimatePanFocus instead")]
+        public void ScenePanFocus(FScene scene, fCamera camera, Vector3f focusPointW, bool bAnimated)
         {
             CameraAnimator animator = camera.Animator();
             if (bAnimated == false || animator == null) {
                 // figure out the pan that we would apply to camera, then apply the delta to the scene
-                Vector3f curPos = camera.GetPosition();
-                Vector3f curDir = camera.GetWorldFrame().Z;
-                float fDist = Vector3.Dot((focusPoint - curPos), curDir);
-                Vector3f newPos = focusPoint - fDist * curDir;
-                Vector3f delta = curPos - newPos;
+                Vector3f camPosW = camera.GetPosition();
+                Vector3f camForward = camera.Forward();
+                float fDist = Vector3.Dot((focusPointW - camPosW), camForward);
+                Vector3f newCamPosW = focusPointW - fDist * camForward;
+                Vector3f delta = camPosW - newCamPosW;
 
                 scene.RootGameObject.Translate(delta, false);
-                camera.SetTarget(focusPoint+delta);
+                camera.SetTarget(focusPointW+delta);
                            
             } else
-                animator.PanFocus(focusPoint);
+                animator.PanFocus(focusPointW);
         }
 
+
+
+        /// <summary>
+        /// translates scene so that focusPointS lies on camera forward axis. Also updates
+        /// camera.Target to be at this point.
+        /// </summary>
+        public void PanFocusOnScenePoint(FScene scene, fCamera camera, Vector3f focusPointS)
+        {
+            Vector3f focusPointW = scene.ToWorldP(focusPointS);
+
+            // figure out the pan that we would apply to camera, then apply the delta to the scene
+            Vector3f camPosW = camera.GetPosition();
+            Vector3f camForward = camera.Forward();
+            float fDist = Vector3.Dot((focusPointW - camPosW), camForward);
+            if (fDist == 0)
+                fDist = 2.0f * ((Camera)camera).nearClipPlane;
+            Vector3f newCamPosW = focusPointW - fDist * camForward;
+            Vector3f delta = camPosW - newCamPosW;
+
+            scene.RootGameObject.Translate(delta, false);
+            camera.SetTarget(focusPointW + delta);
+        }
 
 
 
@@ -224,8 +257,8 @@ namespace f3
             s.scenePosition = scene.RootGameObject.GetPosition();
             s.sceneRotation = scene.RootGameObject.GetRotation();
             s.target = Camera.GetTarget();
-            s.turntableAzimuth = turntableAzimuth;
-            s.turntableAltitude = turntableAltitude;
+            s.turntableAzimuth = turntableAzimuthD;
+            s.turntableAltitude = turntableAltitudeD;
             return s;
         }
 
@@ -235,8 +268,8 @@ namespace f3
             scene.RootGameObject.SetPosition(s.scenePosition);
             scene.RootGameObject.SetRotation(s.sceneRotation);
             Camera.SetTarget(s.target);
-            turntableAzimuth = s.turntableAzimuth;
-            turntableAltitude = s.turntableAltitude;
+            turntableAzimuthD = s.turntableAzimuth;
+            turntableAltitudeD = s.turntableAltitude;
         }
 
 
@@ -366,13 +399,25 @@ namespace f3
         }
 
 
-        public float FitToViewWidth(float fFitWidth)
+        /// <summary>
+        /// returns distance from camera such that a horizontal line of length fFitWidth
+        /// the origin will *just* be fully visible.
+        /// </summary>
+        public float GetFitWidthCameraDistance(float fFitWidth)
         {
             double tan_half_hfov = Math.Tan(Camera.HorzFieldOfViewDeg * 0.5 * MathUtil.Deg2Rad);
-            return fFitWidth / (float)tan_half_hfov;
+            return (fFitWidth*0.5f) / (float)tan_half_hfov;
         }
 
-
+        /// <summary>
+        /// returns distance from camera such that a verticfal line of length fFitHeight
+        /// the origin will *just* be fully visible.
+        /// </summary>
+        public float GetFitHeightCameraDistance(float fFitHeight)
+        {
+            double tan_half_vfov = Math.Tan(Camera.VertFieldOfViewDeg * 0.5 * MathUtil.Deg2Rad);
+            return (fFitHeight*0.5f) / (float)tan_half_vfov;
+        }
 
 
     }

@@ -9,20 +9,29 @@ namespace f3
     public delegate void DMeshChangedEventHandler(DMeshSO so);
 
 
-    public class DMeshSO : BaseSO, IMeshComponentManager, SpatialQueryableSO
+    public enum GeometryEditTypes
+    {
+        ArbitraryEdit,
+        VertexDeformation
+    }
+
+
+    /// <summary>
+    /// SO wrapper around a DMesh3.
+    /// 
+    /// 
+    /// </summary>
+    public class DMeshSO : BaseSO, SpatialQueryableSO
     {
         protected fGameObject parentGO;
 
-        protected struct DisplayMeshComponent
-        {
-            public fMeshGameObject go;
-            public int[] source_vertices;
-        }
-        protected List<DisplayMeshComponent> displayComponents;
 
         DMesh3 mesh;
-        MeshDecomposition decomp;
+        object mesh_write_lock = new object();     // in some cases we would like to directly access internal Mesh from
+                                                   // a background thread, to avoid making mesh copies. Functions that
+                                                   // internally modify .mesh will lock this first.
 
+        IViewMeshManager viewMeshes;
 
         bool enable_spatial = true;
         DMeshAABBTree3 spatial;
@@ -39,26 +48,55 @@ namespace f3
             parentGO = GameObjectFactory.CreateParentGO(UniqueNames.GetNext("DMesh"));
 
             this.mesh = mesh;
-            on_mesh_changed();
 
-            displayComponents = new List<DisplayMeshComponent>();
-            validate_decomp();
+            //viewMeshes = new LinearDecompViewMeshManager(this);
+            viewMeshes = new TrivialViewMeshManager(this);
+
+            on_mesh_changed();
+            viewMeshes.ValidateViewMeshes();
 
             return this;
         }
 
 
-        // Currently do not support changing mesh after creation!!
-        public DMesh3 Mesh
+
+        // To reduce memory usage, when we disconnect a DMeshSO we can
+        // discard temporary data structures. Also, when we destroy it,
+        // it doesn't necessarily get GC'd right away (and if we make mistakes,
+        // maybe never!). But we can manually free the mesh.
+        override public void Connect(bool bRestore)
         {
-            get { return mesh; }
+            if ( bRestore ) {
+                viewMeshes.ValidateViewMeshes();
+            }
         }
+        override public void Disconnect(bool bDestroying)
+        {
+            this.spatial = null;
+            viewMeshes.InvalidateViewMeshes();
+            if ( bDestroying ) {
+                this.mesh = null;
+            }
+        }
+
+
 
 
         /// <summary>
         /// Event will be called whenever our internal mesh changes
         /// </summary>
         public event DMeshChangedEventHandler OnMeshModified;
+
+
+
+        /// <summary>
+        /// Direct access to internal mesh. Safe for reading. **DO NOT** modify this mesh
+        /// unless you are very careful. Better alternatives: ReplaceMesh(), EditAndUpdateMesh().
+        /// If those are not sufficient, please use AcquireDangerousMeshLockForEditing()
+        /// </summary>
+        public DMesh3 Mesh {
+            get { return mesh; }
+        }
 
 
         public DMeshAABBTree3 Spatial
@@ -86,86 +124,167 @@ namespace f3
         }
 
 
+
+
+        /// <summary>
+        /// This function returns an object that holds a lock on the .Mesh for writing.
+        /// You should only call like this:
+        /// 
+        /// using (var danger = meshSO.AcquireDangerousMeshLockForEditing(editType)) {
+        ///      ...do your thing to meshSO.Mesh
+        /// }
+        /// 
+        /// This will safely lock the mesh so that background mesh-read threads are blocked.
+        /// ***DO NOT*** hold onto this lock, or you will never be able to update the mesh again!
+        /// </summary>
+        DangerousExternalLock AcquireDangerousMeshLockForEditing(GeometryEditTypes editType)
+        {
+            return DangerousExternalLock.Lock(mesh_write_lock, 
+                () => { notify_mesh_edited(editType); } );
+        }
+
+
+        /// <summary>
+        /// tell DMeshSO that you have modified .Mesh
+        /// </summary>
+        [System.Obsolete("This should no longer be used. Use EditAndUpdateMesh() or AcquireDangerousMeshLockForEditing()")]
         public void NotifyMeshEdited(bool bVertexDeformation = false)
         {
-            if (bVertexDeformation) {
-                fast_mesh_update();
-            } else {
-                on_mesh_changed();
-                validate_decomp();
-            }
-            post_mesh_modified();
+            notify_mesh_edited(bVertexDeformation ?
+                GeometryEditTypes.VertexDeformation : GeometryEditTypes.ArbitraryEdit);
         }
 
 
+        /// <summary>
+        /// Change mesh under lock. This safely allows mesh edits to happen in concert
+        /// with background threads reading from the mesh. 
+        /// 
+        /// Currently it is only safe to call this from the main thread!
+        /// </summary>
+        public void EditAndUpdateMesh(Action<DMesh3> EditF, GeometryEditTypes editType)
+        {
+            lock (mesh_write_lock) {
+                EditF(mesh);
+            }
+            notify_mesh_edited(editType);
+        }
+
+
+
+        /// <summary>
+        /// replace .Mesh with newMesh. By default, DMeshSO now "owns" this mesh.
+        /// Will make copy instead if you pass bTakeOwnership=false 
+        /// </summary>
         public void ReplaceMesh(DMesh3 newMesh, bool bTakeOwnership = true)
         {
-            if (bTakeOwnership)
-                this.mesh = newMesh;
-            else
-                this.mesh = new DMesh3(newMesh);
+            lock (mesh_write_lock) {
+                if (bTakeOwnership)
+                    this.mesh = newMesh;
+                else
+                    this.mesh = new DMesh3(newMesh);
+            }
 
             on_mesh_changed();
-            validate_decomp();
+            viewMeshes.ValidateViewMeshes();
             post_mesh_modified();
         }
 
+        /// <summary>
+        /// replace vertex positions of internal .Mesh
+        /// [TODO] This function is probably unnecessary...use NotifyMeshEdited(true) instead
+        /// </summary>
         public void UpdateVertexPositions(Vector3f[] vPositions) {
             if (vPositions.Length < mesh.MaxVertexID)
                 throw new Exception("DMeshSO.UpdateVertexPositions: not enough positions provided!");
-            foreach (int vid in mesh.VertexIndices())
-                mesh.SetVertex(vid, vPositions[vid]);
-            fast_mesh_update();
+
+            lock (mesh_write_lock) {
+                foreach (int vid in mesh.VertexIndices())
+                    mesh.SetVertex(vid, vPositions[vid]);
+            }
+
+            fast_mesh_update(false, false);
             post_mesh_modified();
         }
+
+        /// <summary>
+        /// Double version of UpdateVertexPositions
+        /// </summary>
         public void UpdateVertexPositions(Vector3d[] vPositions) {
             if (vPositions.Length < mesh.MaxVertexID)
                 throw new Exception("DMeshSO.UpdateVertexPositions: not enough positions provided!");
-            foreach (int vid in mesh.VertexIndices())
-                mesh.SetVertex(vid, vPositions[vid]);
-            fast_mesh_update();
+
+            lock (mesh_write_lock) {
+                foreach (int vid in mesh.VertexIndices())
+                    mesh.SetVertex(vid, vPositions[vid]);
+            }
+
+            fast_mesh_update(false, false);
             post_mesh_modified();
         }
 
-        // fast update of existing spatial decomp
-        void fast_mesh_update() {
-            foreach (var comp in displayComponents) {
-                comp.go.Mesh.FastUpdateVertices(this.mesh, comp.source_vertices, false, false);
-                comp.go.Mesh.RecalculateNormals();
-            }
-            on_mesh_changed(true, false);
-            validate_decomp();
-        }
 
-
-        #region IMeshComponentManager impl
-
-        public void AddComponent(MeshDecomposition.Component C)
+        /// <summary>
+        /// copy vertex positions from sourceMesh.
+        /// [TODO] perhaps can refactor into a call to EditAndUpdateMesh() ?
+        /// </summary>
+        public void UpdateVertices(DMesh3 sourceMesh, bool bNormals = true, bool bColors = true)
         {
-            fMesh submesh = new fMesh(C.triangles, mesh, C.source_vertices, true, true, true);
-            fMeshGameObject submesh_go = GameObjectFactory.CreateMeshGO("component", submesh, false);
-            submesh_go.SetMaterial(this.CurrentMaterial, true);
-            submesh_go.SetLayer(parentGO.GetLayer());
-            displayComponents.Add(new DisplayMeshComponent() {
-                go = submesh_go, source_vertices = C.source_vertices
-            });
-            if (enable_shadows == false)
-                MaterialUtil.DisableShadows(submesh_go, true, true);
-            AppendNewGO(submesh_go, parentGO, false);
-        }
+            if (sourceMesh.MaxVertexID != mesh.MaxVertexID)
+                throw new Exception("DMeshSO.UpdateVertexPositions: not enough positions provided!");
 
-        public void ClearAllComponents()
-        {
-            if (displayComponents != null) {
-                foreach (DisplayMeshComponent comp in displayComponents) {
-                    RemoveGO((fGameObject)comp.go);
-                    comp.go.Destroy();
+            bNormals &= sourceMesh.HasVertexNormals;
+            if (bNormals && mesh.HasVertexNormals == false)
+                mesh.EnableVertexNormals(Vector3f.AxisY);
+            bColors &= sourceMesh.HasVertexColors;
+            if (bColors && mesh.HasVertexColors == false)
+                mesh.EnableVertexColors(Colorf.White);
+
+            lock (mesh_write_lock) {
+                foreach (int vid in mesh.VertexIndices()) {
+                    Vector3d sourceV = sourceMesh.GetVertex(vid);
+                    mesh.SetVertex(vid, sourceV);
+                    if (bNormals) {
+                        Vector3f sourceN = sourceMesh.GetVertexNormal(vid);
+                        mesh.SetVertexNormal(vid, sourceN);
+                    }
+                    if ( bColors ) {
+                        Vector3f sourceC = sourceMesh.GetVertexColor(vid);
+                        mesh.SetVertexColor(vid, sourceC);
+                    }
                 }
             }
-            displayComponents = new List<DisplayMeshComponent>();
+
+            fast_mesh_update(bNormals, bColors);
+            post_mesh_modified();
         }
 
-        #endregion
+
+
+        // fast update of view meshes for vertex deformations/changes
+        void fast_mesh_update(bool bNormals, bool bColors) {
+            viewMeshes.FastUpdateVertices(bNormals, bColors);
+            on_mesh_changed(true, false);
+            viewMeshes.ValidateViewMeshes();
+        }
+
+
+        /// <summary>
+        /// Run ReadMeshF() and return result. This function write-locks the mesh
+        /// around the call to ReadMeshF, so you can call this from a background thread.
+        /// If ReadMeshF throws an Exception, the Exception is returned.
+        /// </summary>
+        public object SafeMeshRead(Func<DMesh3, object> ReadMeshF)
+        {
+            object result = null;
+            lock (mesh_write_lock) {
+                try {
+                    result = ReadMeshF(mesh);
+                } catch (Exception e) {
+                    result = e;
+                }
+            }
+            return result;
+        }
 
 
 
@@ -174,6 +293,18 @@ namespace f3
         //
         // internals
         // 
+
+        public void notify_mesh_edited(GeometryEditTypes editType)
+        {
+            if (editType == GeometryEditTypes.VertexDeformation) {
+                fast_mesh_update(true, true);
+            } else {
+                on_mesh_changed();
+                viewMeshes.ValidateViewMeshes();
+            }
+            post_mesh_modified();
+        }
+
         void on_mesh_changed(bool bInvalidateSpatial = true, bool bInvalidateDecomp = true)
         {
             if (bInvalidateSpatial) 
@@ -181,8 +312,7 @@ namespace f3
 
             // discard existing mesh GOs
             if (bInvalidateDecomp) {
-                ClearAllComponents();
-                decomp = null;
+                viewMeshes.InvalidateViewMeshes();
             }
         }
 
@@ -191,14 +321,6 @@ namespace f3
             if ( enable_spatial && spatial == null ) {
                 spatial = new DMeshAABBTree3(mesh);
                 spatial.Build();
-            }
-        }
-
-        void validate_decomp()
-        {
-            if ( decomp == null ) {
-                decomp = new MeshDecomposition(mesh, this);
-                decomp.BuildLinear();
             }
         }
 
@@ -271,30 +393,47 @@ namespace f3
         // [RMS] this is not a good name...
         override public AxisAlignedBox3f GetLocalBoundingBox()
         {
-            AxisAlignedBox3f b = (AxisAlignedBox3f)mesh.CachedBounds;
-            Vector3f scale = parentGO.GetLocalScale();
-            b.Scale(scale.x, scale.y, scale.z);
-            return b;
+            return (AxisAlignedBox3f)mesh.CachedBounds;
         }
 
-
+        public override bool ShadowsEnabled {
+            get { return enable_shadows; }
+        }
         override public void DisableShadows() {
             enable_shadows = false;
-            MaterialUtil.DisableShadows(parentGO, true, true);
+            MaterialUtil.DisableShadows(parentGO, true, true, true);
+        }
+        public virtual void SetShadowsEnabled(bool enabled)
+        {
+            if ( enabled != enable_shadows ) {
+                if ( enabled ) {
+                    enable_shadows = true;
+                    MaterialUtil.EnableShadows(parentGO, true, true, true);
+                } else {
+                    enable_shadows = false;
+                    MaterialUtil.DisableShadows(parentGO, true, true, true);
+                }
+            }
         }
 
-        override public void SetLayer(int nLayer)
-        {
+        override public void SetLayer(int nLayer) {
             parentGO.SetLayer(nLayer);
             base.SetLayer(nLayer);
         }
 
 
-
+        /// <summary>
+        /// Set the position of the object frame for this SO without moving the mesh in the scene.
+        /// The input frame is the new object frame. So, this is a frame "in scene coordinates" unless
+        /// this object has a parent SceneObject (ie is not a child of Scene directly). In that case
+        /// the frame needs to be specified relative to that SO. An easy way to do this is to via
+        ///   obj_pivot = GetLocalFrame(Object).FromFrame( SceneTransforms.SceneToObject(pivot_in_scene) )
+        /// TODO: specify frame coordpace as input argument?
+        /// </summary>
         public void RepositionPivot(Frame3f objFrame)
         {
-            if (Parent is FScene == false)
-                throw new NotSupportedException("DMeshSO.RepositionMeshFrame: have not tested this!");
+            //if (Parent is FScene == false)
+            //    throw new NotSupportedException("DMeshSO.RepositionMeshFrame: have not tested this!");
 
             Frame3f curFrame = this.GetLocalFrame(CoordSpace.ObjectCoords);
             bool bNormals = mesh.HasVertexNormals;
@@ -302,14 +441,14 @@ namespace f3
             // map vertices to new frame
             foreach (int vid in mesh.VertexIndices()) {
                 Vector3f v = (Vector3f)mesh.GetVertex(vid);
-                v = curFrame.FromFrameP(v);   // 
-                v = objFrame.ToFrameP(v);
+                v = curFrame.FromFrameP(ref v); 
+                v = objFrame.ToFrameP(ref v);
                 mesh.SetVertex(vid, v);
 
                 if ( bNormals ) {
                     Vector3f n = mesh.GetVertexNormal(vid);
-                    n = curFrame.FromFrameV(n);
-                    n = objFrame.ToFrameV(n);
+                    n = curFrame.FromFrameV(ref n);
+                    n = objFrame.ToFrameV(ref n);
                     mesh.SetVertexNormal(vid, n);
                 }
             }
@@ -317,15 +456,17 @@ namespace f3
             // set new object frame
             SetLocalFrame(objFrame, CoordSpace.ObjectCoords);
 
-            fast_mesh_update();
+            fast_mesh_update(bNormals, false);
             post_mesh_modified();
         }
 
 
 
 
-        // [RMS] this is not working right now...
-        override public bool FindRayIntersection(Ray3f ray, out SORayHit hit)
+        /// <summary>
+        /// Find intersection of *WORLD* ray with Mesh
+        /// </summary>
+        override public bool FindRayIntersection(Ray3f rayW, out SORayHit hit)
         {
             hit = null;
             if (enable_spatial == false)
@@ -337,7 +478,7 @@ namespace f3
             }
 
             // convert ray to local
-            Frame3f f = new Frame3f(ray.Origin, ray.Direction);
+            Frame3f f = new Frame3f(rayW.Origin, rayW.Direction);
             f = SceneTransforms.TransformTo(f, this, CoordSpace.WorldCoords, CoordSpace.ObjectCoords);
             Ray3d local_ray = new Ray3d(f.Origin, f.Z);
 
@@ -351,7 +492,8 @@ namespace f3
                 hit = new SORayHit();
                 hit.hitPos = hitF.Origin;
                 hit.hitNormal = hitF.Z;
-                hit.fHitDist = hit.hitPos.Distance(ray.Origin);    // simpler than transforming!
+                hit.hitIndex = hit_tid;
+                hit.fHitDist = hit.hitPos.Distance(rayW.Origin);    // simpler than transforming!
                 hit.hitGO = RootGameObject;
                 hit.hitSO = this;
                 return true;
@@ -399,8 +541,6 @@ namespace f3
             }
             return false;
         }
-
-
 
     }
 }

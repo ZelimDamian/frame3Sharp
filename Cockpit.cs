@@ -90,7 +90,7 @@ namespace f3
             while (vUIElements.Count > 0)
                 RemoveUIElement(vUIElements[0], true);
             RootGameObject.SetParent(null);
-            UnityEngine.Object.Destroy(RootGameObject);
+            RootGameObject.Destroy();
         }
 
 
@@ -503,7 +503,9 @@ namespace f3
 
         public bool HandleShortcutKeys()
         {
-            if (FPlatformUI.IsConsumingMouseInput())
+            //if (FPlatformUI.IsConsumingMouseInput())
+            //    return false;
+            if (FPlatformUI.TextEntryFieldHasFocus())
                 return false;
 
             foreach ( IShortcutKeyHandler h in vKeyHandlers ) {

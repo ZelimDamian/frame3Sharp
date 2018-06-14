@@ -1,8 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.IO;
 using System.Threading;
 using UnityEngine;
 using g3;
@@ -17,7 +14,7 @@ namespace f3
 
     public class ExportStatus
     {
-        public SceneMeshExporter Exporter;
+        public IExporter Exporter;
 
         // If IsComputing == true, then exporter is still working in background
         // threads. It will eventually go false and flags will be set.
@@ -33,7 +30,13 @@ namespace f3
     }
 
 
-    public class SceneMeshExporter
+    // [RMS] this is a dummy interface so that we can use ExportStatus with non-SceneMeshExporter objects
+    public interface IExporter
+    {
+    }
+
+
+    public class SceneMeshExporter : IExporter
     {
 
         public g3.IOCode LastWriteStatus { get; set; }
@@ -71,12 +74,10 @@ namespace f3
             if (so is DMeshSO) {
                 // handled separately
             } else { 
-                GameObject rootgo = so.RootGameObject;
+                fGameObject rootgo = so.RootGameObject;
                 foreach (GameObject childgo in rootgo.Children()) {
-                    MeshFilter filter = childgo.GetComponent<MeshFilter>();
-                    if (filter == null || filter.mesh == null)
-                        continue;
-                    vExports.Add(childgo);
+                    if ( childgo.GetSharedMesh() != null )
+                        vExports.Add(childgo);
                 }
             }
             return vExports;
@@ -120,7 +121,7 @@ namespace f3
                     foreach (int vid in m.VertexIndices()) {
                         Vector3f v = (Vector3f)m.GetVertex(vid);
                         v = SceneTransforms.ObjectToSceneP(meshSO, v);
-                        v = UnityUtil.SwapLeftRight(v);
+                        v = MeshTransforms.FlipLeftRightCoordSystems(v);
                         m.SetVertex(vid, v);
                     }
                     m.ReverseOrientation();
@@ -222,13 +223,13 @@ namespace f3
                 v = filter.gameObject.transform.TransformPoint(v);
                 // world back to scene
                 v = scene.ToSceneP(v);
-                vi.v = UnityUtil.SwapLeftRight(v);
+                vi.v = MeshTransforms.FlipLeftRightCoordSystems(vi.v);
 
                 if (WriteNormals) {
                     Vector3 n = normals[i];
                     n = filter.gameObject.transform.TransformDirection(n);  // to world
                     n = scene.ToSceneN(n);  // to scene
-                    vi.n = UnityUtil.SwapLeftRight(n);
+                    vi.n = MeshTransforms.FlipLeftRightCoordSystems(vi.n);
                 }
                 if (WriteVertexColors)
                     vi.c = colors[i];

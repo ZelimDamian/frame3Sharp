@@ -22,11 +22,14 @@ namespace f3 {
             t.TargetPoint = newTarget;
         }
 
-
-        // we attach this below
-        public static CameraManipulator Manipulator(this UnityEngine.Camera c)
+        public static Vector3f GetPosition(this UnityEngine.Camera c)
         {
-            return c.gameObject.GetComponent<CameraManipulator>();
+            return c.gameObject.transform.position;
+        }
+
+        public static Quaternionf GetOrientation(this UnityEngine.Camera c)
+        {
+            return c.gameObject.transform.rotation;
         }
     }
 
@@ -62,7 +65,7 @@ namespace f3 {
         public void Update()
         {
             targetGO.transform.position = TargetPoint;
-            float fScaling = VRUtil.GetVRRadiusForVisualAngle(TargetPoint, gameObject.transform.position, 1.0f);
+            float fScaling = VRUtil.GetVRRadiusForVisualAngle(TargetPoint, gameObject.transform.position, SceneGraphConfig.CameraPivotVisualDegrees);
             targetGO.transform.localScale = fScaling * Vector3f.One; 
 
             if ( ShowTarget && SceneGraphConfig.EnableVisibleCameraPivot ) {
@@ -138,7 +141,7 @@ namespace f3 {
                 List<GameObject> children = new List<GameObject>(mainCameraObj.Children());
                 foreach (var child in children) {
                     mainCameraObj.RemoveChild(child);
-                    GameObject.Destroy(child);
+                    child.Destroy();
                 }
             }
 
