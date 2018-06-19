@@ -486,6 +486,12 @@ namespace f3
             if (hit_tid != DMesh3.InvalidID) {
                 IntrRay3Triangle3 intr = MeshQueries.TriangleIntersection(mesh, hit_tid, local_ray);
 
+                if (intr == null)
+                {
+                    DebugUtil.Error("Spatial needs to be rebuilt!");
+                    return false;
+                }
+
                 Frame3f hitF = new Frame3f(local_ray.PointAt(intr.RayParameter), mesh.GetTriNormal(hit_tid));
                 hitF = SceneTransforms.TransformTo(hitF, this, CoordSpace.ObjectCoords, CoordSpace.WorldCoords);
 
