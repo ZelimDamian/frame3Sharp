@@ -89,7 +89,7 @@ namespace f3
 
 
         static Interval1d CosVisibilityRange = new Interval1d(
-            -Math.Cos(45 * MathUtil.Deg2Rad), Math.Cos(15 * MathUtil.Deg2Rad));
+            -Math.Cos(65 * MathUtil.Deg2Rad), Math.Cos(10 * MathUtil.Deg2Rad));
         public override bool CheckVisibility(ref Frame3f curFrameW, ref Vector3d eyePosW) {
             Vector3d axis = curFrameW.GetAxis(nTranslationAxis);
             Vector3d eyevec = (eyePosW - curFrameW.Origin).Normalized;
