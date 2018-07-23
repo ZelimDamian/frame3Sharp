@@ -68,17 +68,22 @@ namespace f3
             mesh = m;
         }
 
+        private readonly List<Vector3> tempVertHolder = new List<Vector3>();
 
         public void FastUpdateVertices(DMesh3 source, bool bCopyNormals = false, bool bCopyColors = false)
         {
             int NV = source.MaxVertexID;
-            Vector3[] vertices = new Vector3[NV];
-            for (int i = 0; i < NV; ++i) {
-                if ( source.IsVertex(i) )
-                    vertices[i] = (Vector3)source.GetVertex(i);
+//            Vector3[] vertices = new Vector3[NV];
+            tempVertHolder.Clear();
+            tempVertHolder.Capacity = NV;
+            for ( int i = 0; i < NV; ++i ) {
+                if (source.IsVertex(i))
+                {
+                    tempVertHolder.Add((Vector3)source.GetVertexUnsafe(i));
+                }
             }
 
-            mesh.vertices = vertices;
+            mesh.SetVertices(tempVertHolder);
 
             if (bCopyNormals && source.HasVertexNormals) {
                 Vector3[] normals = new Vector3[NV];

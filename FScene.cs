@@ -463,10 +463,10 @@ namespace f3
             }
             vObjects.Remove(so);
             OnSceneChanged(so, SceneChangeType.Removed);
-            so.Disconnect(bDestroy);
 
             if (so.RootGameObject != null) {
                 if (bDestroy) {
+                    so.Disconnect(bDestroy);
                     SceneUtil.DestroySO(so);
                 } else {
                     // add to deleted set
