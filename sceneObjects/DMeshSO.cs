@@ -137,7 +137,7 @@ namespace f3
         /// This will safely lock the mesh so that background mesh-read threads are blocked.
         /// ***DO NOT*** hold onto this lock, or you will never be able to update the mesh again!
         /// </summary>
-        DangerousExternalLock AcquireDangerousMeshLockForEditing(GeometryEditTypes editType)
+        public DangerousExternalLock AcquireDangerousMeshLockForEditing(GeometryEditTypes editType)
         {
             return DangerousExternalLock.Lock(mesh_write_lock, 
                 () => { notify_mesh_edited(editType); } );
