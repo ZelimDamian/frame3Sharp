@@ -212,13 +212,20 @@ namespace f3
 
 
 
-        void generate_grid_lines(LineSet lines, Vector3f axis1, Vector3f axis2, int nExtentCount1, int nExtentCount2, float stepSize)
+        public void generate_grid_lines(LineSet lines, Vector3f axis1, Vector3f axis2, int nExtentCount1,
+            int nExtentCount2, float stepSize)
+        {
+            generate_grid_lines(lines, axis1, axis2, nExtentCount1, nExtentCount2, stepSize, IncludeEnds);
+        }
+        
+        public static void generate_grid_lines(LineSet lines, Vector3f axis1, Vector3f axis2, int nExtentCount1,
+            int nExtentCount2, float stepSize, bool includeEnds)
         {
             Vector2f minPos = stepSize * new Vector2f(-nExtentCount1, -nExtentCount2);
             Vector2f maxPos = stepSize * new Vector2f(nExtentCount1, nExtentCount2);
             int n1 = 2 * nExtentCount1, n2 = 2 * nExtentCount2;
 
-            int start1 = (IncludeEnds) ? 0 : 1, end1 = (IncludeEnds) ? n1 : n1 - 1;
+            int start1 = (includeEnds) ? 0 : 1, end1 = (includeEnds) ? n1 : n1 - 1;
             for ( int i1 = start1; i1 <= end1; i1++ ) {
                 float t = (float)i1 / (float)n1;
                 float tx = MathUtil.Lerp(minPos.x, maxPos.x, t);
@@ -227,7 +234,7 @@ namespace f3
                 lines.Segments.Add(new Segment3d(p0, p1));
             }
 
-            int start2 = (IncludeEnds) ? 0 : 1, end2 = (IncludeEnds) ? n2 : n2 - 1;
+            int start2 = (includeEnds) ? 0 : 1, end2 = (includeEnds) ? n2 : n2 - 1;
             for (int i2 = start2; i2 <= end2; i2++) {
                 float t = (float)i2 / (float)n2;
                 float ty = MathUtil.Lerp(minPos.y, maxPos.y, t);
