@@ -197,10 +197,17 @@ namespace f3
             if (dz > 0 && fTargetDist - dz < fMinTargetDist)
                 dz = fTargetDist - fMinTargetDist;
 
-            Vector3f delta = dz * fw;
-            scene.RootGameObject.Translate(-delta, false);
-            if ( bKeepTargetPos )
-                cam.SetTarget(cam.GetTarget() - delta);
+            if (cam.IsOrthographic)
+            {
+                cam.OrthoHeight += dz;
+            }
+            else
+            {
+                Vector3f delta = dz * fw;
+                scene.RootGameObject.Translate(-delta, false);
+                if ( bKeepTargetPos )
+                    cam.SetTarget(cam.GetTarget() - delta);
+            }
         }
 
 
