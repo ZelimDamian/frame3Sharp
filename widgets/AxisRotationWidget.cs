@@ -128,7 +128,7 @@ namespace f3
         }
 
 
-        static double VisibilityThresh = Math.Cos(80 * MathUtil.Deg2Rad);
+        static double VisibilityThresh = Math.Cos(85 * MathUtil.Deg2Rad);
         public override bool CheckVisibility(ref Frame3f curFrameW, ref Vector3d eyePosW)
         {
             Vector3d axis = curFrameW.GetAxis(nRotationAxis);

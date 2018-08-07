@@ -82,7 +82,7 @@ namespace f3
             RootGameObject.Destroy();
         }
 
-        static double VisibilityThresh = Math.Cos(80 * MathUtil.Deg2Rad);
+        static double VisibilityThresh = Math.Cos(90 * MathUtil.Deg2Rad);
         public override bool CheckVisibility(ref Frame3f curFrameW, ref Vector3d eyePosW)
         {
             Vector3d axis = curFrameW.GetAxis(nTranslationPlaneNormal);
