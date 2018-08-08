@@ -178,7 +178,7 @@ namespace f3
         }
         public static bool IsVisible(this GameObject go)
         {
-            return (go.activeSelf == true);
+            return (go != null && go.activeSelf == true);
         }
 
 
