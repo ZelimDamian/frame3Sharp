@@ -34,7 +34,7 @@ namespace f3
 
     public class FloatParameter : IParameter<float>
     {
-        Interval1d ValidRange;
+        public Interval1d ValidRange;
 
         public FloatParameter()
         {
@@ -78,7 +78,7 @@ namespace f3
 
     public class IntParameter : IParameter<int>
     {
-        Interval1i ValidRange;
+        public Interval1i ValidRange;
 
         public IntParameter()
         {
