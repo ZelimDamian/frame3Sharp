@@ -368,7 +368,7 @@ VertexOutputForwardAdd vertForwardAdd_f3VC(VertexInput v)
 	o.pos = UnityObjectToClipPos(v.vertex);
 
 	o.tex = TexCoords(v);
-	o.eyeVec = NormalizePerVertexNormal(posWorld.xyz - _WorldSpaceCameraPos);
+    o.eyeVec = float4(posWorld.xyz - _WorldSpaceCameraPos, 1.0);
 	o.posWorld = posWorld.xyz;
 	float3 normalWorld = UnityObjectToWorldNormal(v.normal);
 #ifdef _TANGENT_TO_WORLD
