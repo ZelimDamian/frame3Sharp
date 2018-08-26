@@ -111,7 +111,28 @@ namespace f3
             return value;
         }
     }
+    
+    public class StringParameter : IParameter<string>
+    {
+        public Interval1i ValidRange;
 
+        public StringParameter()
+        {
+            name = "float_parameter";
+            defaultValue = "";
+            ValidRange = new Interval1i(0, 50);
+        }
+        override public string TypeName() { return "string"; }
+
+        public void SetValidRange(int min, int max) {
+            ValidRange = new Interval1i(min, max);
+        }
+
+        override public string ClampToRange(string value)
+        {
+            return value?.Substring(0, Math.Min(ValidRange.b, value.Length));
+        }
+    }
 
 
     public interface IParameterSource
@@ -183,6 +204,14 @@ namespace f3
             return param;
         }
 
+        public virtual StringParameter Register(string sName, Func<string> getValue, Action<string> setValue, string defaultValue, bool isAlias = false) {
+            if (FindByName(sName) != null)
+                throw new Exception("ParameterSet.Register: parameter named " + sName + " already registered!");
+            var param = new StringParameter() 
+                { name = sName, getValue = getValue, setValue = setValue, defaultValue = defaultValue, isAlias = isAlias };
+            vParameters.Add(param);
+            return param;
+        }
 
         public AnyParameter FindByName(string sName) {
             return vParameters.Find((s) => s.name == sName);
