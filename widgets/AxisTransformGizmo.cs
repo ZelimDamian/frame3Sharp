@@ -52,16 +52,19 @@ namespace f3
         AxisRotateX = 1<<7,
         AxisRotateY = 1<<8,
         AxisRotateZ = 1<<9,
+        AxisScaleX = 1 << 10,
+        AxisScaleY = 1 << 11,
+        AxisScaleZ = 1 << 12,
         UniformScale = 1<<24,
 
         AxisTranslations = AxisTranslateX | AxisTranslateY | AxisTranslateZ,
         PlaneTranslations = PlaneTranslateX | PlaneTranslateY | PlaneTranslateZ,
         AxisRotations = AxisRotateX | AxisRotateY | AxisRotateZ,
+        AxisScales = AxisScaleX | AxisScaleY | AxisScaleZ,
+        AllScales = AxisScales | UniformScale,
 
-        All = AxisTranslations | PlaneTranslations | AxisRotations | UniformScale
+        All = AxisTranslations | PlaneTranslations | AxisRotations | AllScales
     }
-
-
 
     public interface IAxisGizmoWidgetFactory
     {
@@ -120,12 +123,12 @@ namespace f3
         TransientXFormSO internalXFormSO;
 
         SceneUIParent parent;
-		FScene parentScene;
+		protected FScene parentScene;
         List<SceneObject> targets;
 		ITransformWrapper targetWrapper;
 
-		Dictionary<fGameObject, Standard3DTransformWidget> Widgets;
-        List<fGameObject> enabledWidgetGOs = new List<fGameObject>();
+		protected Dictionary<fGameObject, Standard3DTransformWidget> Widgets;
+        protected readonly List<fGameObject> enabledWidgetGOs = new List<fGameObject>();
         Standard3DTransformWidget activeWidget;
         Standard3DTransformWidget hoverWidget;
 
@@ -142,7 +145,7 @@ namespace f3
         public bool SupportsFrameMode { get { return true; } }
 
 
-        AxisGizmoFlags eEnabledWidgets = AxisGizmoFlags.All;
+        protected AxisGizmoFlags eEnabledWidgets = AxisGizmoFlags.All;
         public AxisGizmoFlags ActiveWidgets {
             get { return eEnabledWidgets; }
             set { eEnabledWidgets = value; update_active(); }
@@ -292,36 +295,7 @@ namespace f3
 
 			root = GameObjectFactory.CreateParentGO("TransformGizmo");
 
-            var xMaterial = Factory.MakeMaterial(AxisGizmoFlags.AxisTranslateX);
-            var xHoverMaterial = Factory.MakeHoverMaterial(AxisGizmoFlags.AxisTranslateX);
-            var yMaterial = Factory.MakeMaterial(AxisGizmoFlags.AxisTranslateY);
-            var yHoverMaterial = Factory.MakeHoverMaterial(AxisGizmoFlags.AxisTranslateY);
-            var zMaterial = Factory.MakeMaterial(AxisGizmoFlags.AxisTranslateZ);
-            var zHoverMaterial = Factory.MakeHoverMaterial(AxisGizmoFlags.AxisTranslateZ);
-
-            if ( Factory.Supports(AxisGizmoFlags.AxisTranslateX) )
-                translate_x = append_widget(AxisGizmoFlags.AxisTranslateX, 0, "x_translate", xMaterial, xHoverMaterial);
-            if (Factory.Supports(AxisGizmoFlags.AxisTranslateY))
-                translate_y = append_widget(AxisGizmoFlags.AxisTranslateY, 1, "y_translate", yMaterial, yHoverMaterial);
-            if (Factory.Supports(AxisGizmoFlags.AxisTranslateZ))
-                translate_z = append_widget(AxisGizmoFlags.AxisTranslateZ, 2, "z_translate", zMaterial, zHoverMaterial);
-
-            if (Factory.Supports(AxisGizmoFlags.AxisRotateX))
-                rotate_x = append_widget(AxisGizmoFlags.AxisRotateX, 0, "x_rotate", xMaterial, xHoverMaterial);
-            if (Factory.Supports(AxisGizmoFlags.AxisRotateY))
-                rotate_y = append_widget(AxisGizmoFlags.AxisRotateY, 1, "y_rotate", yMaterial, yHoverMaterial);
-            if (Factory.Supports(AxisGizmoFlags.AxisRotateZ))
-                rotate_z = append_widget(AxisGizmoFlags.AxisRotateZ, 2, "z_rotate", zMaterial, zHoverMaterial);
-
-            if (Factory.Supports(AxisGizmoFlags.PlaneTranslateX))
-                translate_yz = append_widget(AxisGizmoFlags.PlaneTranslateX, 0, "yz_translate", xMaterial, xHoverMaterial);
-            if (Factory.Supports(AxisGizmoFlags.PlaneTranslateY))
-                translate_xz = append_widget(AxisGizmoFlags.PlaneTranslateY, 1, "xz_translate", yMaterial, yHoverMaterial);
-            if (Factory.Supports(AxisGizmoFlags.PlaneTranslateZ))
-                translate_xy = append_widget(AxisGizmoFlags.PlaneTranslateZ, 2, "xy_translate", zMaterial, zHoverMaterial);
-
-            if (Factory.Supports(AxisGizmoFlags.UniformScale))
-                uniform_scale = append_widget(AxisGizmoFlags.UniformScale, 0, "uniform_scale", null, null);
+            CreateWidgets();
 
             gizmoGeomBounds = UnityUtil.GetGeometryBoundingBox(root, true);
             gizmoGeomBounds.Contain(Vector3d.Zero);
@@ -344,6 +318,40 @@ namespace f3
             // is called, which means that on next frame the geometry will pop. 
             // So we hide here and show in PreRender
             root.Hide();
+        }
+
+        protected virtual void CreateWidgets()
+        {
+            var xMaterial = Factory.MakeMaterial(AxisGizmoFlags.AxisTranslateX);
+            var xHoverMaterial = Factory.MakeHoverMaterial(AxisGizmoFlags.AxisTranslateX);
+            var yMaterial = Factory.MakeMaterial(AxisGizmoFlags.AxisTranslateY);
+            var yHoverMaterial = Factory.MakeHoverMaterial(AxisGizmoFlags.AxisTranslateY);
+            var zMaterial = Factory.MakeMaterial(AxisGizmoFlags.AxisTranslateZ);
+            var zHoverMaterial = Factory.MakeHoverMaterial(AxisGizmoFlags.AxisTranslateZ);
+
+            if (Factory.Supports(AxisGizmoFlags.AxisTranslateX))
+                translate_x = append_widget(AxisGizmoFlags.AxisTranslateX, 0, "x_translate", xMaterial, xHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.AxisTranslateY))
+                translate_y = append_widget(AxisGizmoFlags.AxisTranslateY, 1, "y_translate", yMaterial, yHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.AxisTranslateZ))
+                translate_z = append_widget(AxisGizmoFlags.AxisTranslateZ, 2, "z_translate", zMaterial, zHoverMaterial);
+
+            if (Factory.Supports(AxisGizmoFlags.AxisRotateX))
+                rotate_x = append_widget(AxisGizmoFlags.AxisRotateX, 0, "x_rotate", xMaterial, xHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.AxisRotateY))
+                rotate_y = append_widget(AxisGizmoFlags.AxisRotateY, 1, "y_rotate", yMaterial, yHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.AxisRotateZ))
+                rotate_z = append_widget(AxisGizmoFlags.AxisRotateZ, 2, "z_rotate", zMaterial, zHoverMaterial);
+
+            if (Factory.Supports(AxisGizmoFlags.PlaneTranslateX))
+                translate_yz = append_widget(AxisGizmoFlags.PlaneTranslateX, 0, "yz_translate", xMaterial, xHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.PlaneTranslateY))
+                translate_xz = append_widget(AxisGizmoFlags.PlaneTranslateY, 1, "xz_translate", yMaterial, yHoverMaterial);
+            if (Factory.Supports(AxisGizmoFlags.PlaneTranslateZ))
+                translate_xy = append_widget(AxisGizmoFlags.PlaneTranslateZ, 2, "xy_translate", zMaterial, zHoverMaterial);
+
+            if (Factory.Supports(AxisGizmoFlags.UniformScale))
+                uniform_scale = append_widget(AxisGizmoFlags.UniformScale, 0, "uniform_scale", null, null);
         }
 
 
@@ -370,10 +378,8 @@ namespace f3
                 case AxisGizmoFlags.AxisRotateX:
                 case AxisGizmoFlags.AxisRotateY:
                 case AxisGizmoFlags.AxisRotateZ:
-                    widget = new AxisRotationWidget(nAxis) {
+                    widget = new AxisTrackballRotationWidget(nAxis) {
                         RootGameObject = go, StandardMaterial = useMaterial, HoverMaterial = useHoverMaterial,
-                        EnableSnapping = EnableRotationSnapping,
-                        SnapIncrementDeg = RotationSnapStepSizeDeg
                     };
                     break;
 
@@ -394,7 +400,11 @@ namespace f3
                     break;
 
                 default:
+                {
+                    RemoveGO((fGameObject)go);
+                    go.Destroy();
                     throw new Exception("DefaultAxisGizmoWidgetFactory.MakeHoverMaterial: invalid widget type " + widget.ToString());
+                }
             }
 
             Widgets[go] = widget;
@@ -488,7 +498,7 @@ namespace f3
         }
 
 
-        void update_active()
+        protected virtual void update_active()
         {
             foreach (var go in Widgets.Keys)
                 go.SetVisible(false);
@@ -685,6 +695,7 @@ namespace f3
             switch (widget) {
                 case AxisGizmoFlags.AxisRotateX:
                 case AxisGizmoFlags.AxisTranslateX:
+                case AxisGizmoFlags.AxisScaleX:
                 case AxisGizmoFlags.PlaneTranslateX:
                     if (XMaterial == null) {
                         XMaterial = MaterialUtil.CreateTransparentMaterial(Colorf.VideoRed, Alpha);
@@ -695,6 +706,7 @@ namespace f3
 
                 case AxisGizmoFlags.AxisRotateY:
                 case AxisGizmoFlags.AxisTranslateY:
+                case AxisGizmoFlags.AxisScaleY:
                 case AxisGizmoFlags.PlaneTranslateY:
                     if (YMaterial == null) {
                         YMaterial = MaterialUtil.CreateTransparentMaterial(Colorf.VideoGreen, Alpha);
@@ -705,6 +717,7 @@ namespace f3
 
                 case AxisGizmoFlags.AxisRotateZ:
                 case AxisGizmoFlags.AxisTranslateZ:
+                case AxisGizmoFlags.AxisScaleZ:
                 case AxisGizmoFlags.PlaneTranslateZ:
                     if (ZMaterial == null) { 
                         ZMaterial = MaterialUtil.CreateTransparentMaterial(Colorf.VideoBlue, Alpha);
@@ -735,6 +748,7 @@ namespace f3
             switch (widget) {
                 case AxisGizmoFlags.AxisRotateX:
                 case AxisGizmoFlags.AxisTranslateX:
+                case AxisGizmoFlags.AxisScaleX:
                 case AxisGizmoFlags.PlaneTranslateX:
                     if (XHover == null) {
                         XHover = MaterialUtil.CreateTransparentMaterial(Colorf.VideoRed);
@@ -745,6 +759,7 @@ namespace f3
 
                 case AxisGizmoFlags.AxisRotateY:
                 case AxisGizmoFlags.AxisTranslateY:
+                case AxisGizmoFlags.AxisScaleY:
                 case AxisGizmoFlags.PlaneTranslateY:
                     if (YHover == null) {
                         YHover = MaterialUtil.CreateTransparentMaterial(Colorf.VideoGreen);
@@ -755,6 +770,7 @@ namespace f3
 
                 case AxisGizmoFlags.AxisRotateZ:
                 case AxisGizmoFlags.AxisTranslateZ:
+                case AxisGizmoFlags.AxisScaleZ:
                 case AxisGizmoFlags.PlaneTranslateZ:
                     if (ZHover == null) {
                         ZHover = MaterialUtil.CreateTransparentMaterial(Colorf.VideoBlue);
@@ -777,61 +793,61 @@ namespace f3
         }
 
 
-        static fMesh AxisTranslateX, AxisTranslateY, AxisTranslateZ;
-        static fMesh AxisRotateX, AxisRotateY, AxisRotateZ;
-        static fMesh PlaneTranslateX, PlaneTranslateY, PlaneTranslateZ;
-        static fMesh UniformScale;
+        static fMesh _axisTranslateX, _axisTranslateY, _axisTranslateZ;
+        static fMesh _axisRotateX, _axisRotateY, _axisRotateZ;
+        static fMesh _planeTranslateX, _planeTranslateY, _planeTranslateZ;
+        static fMesh _uniformScale;
 
 
         public virtual fMesh MakeGeometry(AxisGizmoFlags widget)
         {
             switch (widget) {
                 case AxisGizmoFlags.AxisTranslateX:
-                    if (AxisTranslateX == null)
-                        AxisTranslateX = FResources.LoadMesh("transform_gizmo/axis_translate_x");
-                    return AxisTranslateX;
+                    if (_axisTranslateX == null)
+                        _axisTranslateX = FResources.LoadMesh("transform_gizmo/axis_translate_x");
+                    return _axisTranslateX;
                 case AxisGizmoFlags.AxisTranslateY:
-                    if (AxisTranslateY == null)
-                        AxisTranslateY = FResources.LoadMesh("transform_gizmo/axis_translate_y");
-                    return AxisTranslateY;
+                    if (_axisTranslateY == null)
+                        _axisTranslateY = FResources.LoadMesh("transform_gizmo/axis_translate_y");
+                    return _axisTranslateY;
                 case AxisGizmoFlags.AxisTranslateZ:
-                    if (AxisTranslateZ == null)
-                        AxisTranslateZ = FResources.LoadMesh("transform_gizmo/axis_translate_z");
-                    return AxisTranslateZ;
+                    if (_axisTranslateZ == null)
+                        _axisTranslateZ = FResources.LoadMesh("transform_gizmo/axis_translate_z");
+                    return _axisTranslateZ;
 
 
                 case AxisGizmoFlags.AxisRotateX:
-                    if (AxisRotateX == null)
-                        AxisRotateX = FResources.LoadMesh("transform_gizmo/axisrotate_x");
-                    return AxisRotateX;
+                    if (_axisRotateX == null)
+                        _axisRotateX = FResources.LoadMesh("transform_gizmo/axisrotate_x");
+                    return _axisRotateX;
                 case AxisGizmoFlags.AxisRotateY:
-                    if (AxisRotateY == null)
-                        AxisRotateY = FResources.LoadMesh("transform_gizmo/axisrotate_y");
-                    return AxisRotateY;
+                    if (_axisRotateY == null)
+                        _axisRotateY = FResources.LoadMesh("transform_gizmo/axisrotate_y");
+                    return _axisRotateY;
                 case AxisGizmoFlags.AxisRotateZ:
-                    if (AxisRotateZ == null)
-                        AxisRotateZ = FResources.LoadMesh("transform_gizmo/axisrotate_z");
-                    return AxisRotateZ;
+                    if (_axisRotateZ == null)
+                        _axisRotateZ = FResources.LoadMesh("transform_gizmo/axisrotate_z");
+                    return _axisRotateZ;
 
 
                 case AxisGizmoFlags.PlaneTranslateX:
-                    if (PlaneTranslateX == null)
-                        PlaneTranslateX = FResources.LoadMesh("transform_gizmo/plane_translate_yz");
-                    return PlaneTranslateX;
+                    if (_planeTranslateX == null)
+                        _planeTranslateX = FResources.LoadMesh("transform_gizmo/plane_translate_yz");
+                    return _planeTranslateX;
                 case AxisGizmoFlags.PlaneTranslateY:
-                    if (PlaneTranslateY == null)
-                        PlaneTranslateY = FResources.LoadMesh("transform_gizmo/plane_translate_xz");
-                    return PlaneTranslateY;
+                    if (_planeTranslateY == null)
+                        _planeTranslateY = FResources.LoadMesh("transform_gizmo/plane_translate_xz");
+                    return _planeTranslateY;
                 case AxisGizmoFlags.PlaneTranslateZ:
-                    if (PlaneTranslateZ == null)
-                        PlaneTranslateZ = FResources.LoadMesh("transform_gizmo/plane_translate_xy");
-                    return PlaneTranslateZ;
+                    if (_planeTranslateZ == null)
+                        _planeTranslateZ = FResources.LoadMesh("transform_gizmo/plane_translate_xy");
+                    return _planeTranslateZ;
 
 
                 case AxisGizmoFlags.UniformScale:
-                    if (UniformScale == null)
-                        UniformScale = FResources.LoadMesh("transform_gizmo/uniform_scale");
-                    return UniformScale;
+                    if (_uniformScale == null)
+                        _uniformScale = FResources.LoadMesh("transform_gizmo/uniform_scale");
+                    return _uniformScale;
 
 
                 default:
