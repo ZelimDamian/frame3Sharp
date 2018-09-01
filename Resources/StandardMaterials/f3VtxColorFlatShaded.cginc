@@ -21,7 +21,7 @@ struct VertexInput_f3VC
 	float2 uv2		: TEXCOORD2;
 #endif
 #ifdef _TANGENT_TO_WORLD
-	half4 tangent	: TANGENT;
+	float4 tangent	: TANGENT;
 #endif
 	UNITY_VERTEX_INPUT_INSTANCE_ID
 };
@@ -47,9 +47,9 @@ float4 TexCoords_f3VC(VertexInput_f3VC v)
 
 
 // [RMS] have to duplicate this function because of input struct name
-inline half4 VertexGIForward_f3VC(VertexInput_f3VC v, float3 posWorld, half3 normalWorld)
+inline float4 VertexGIForward_f3VC(VertexInput_f3VC v, float3 posWorld, half3 normalWorld)
 {
-    half4 ambientOrLightmapUV = 0;
+    float4 ambientOrLightmapUV = 0;
     // Static lightmaps
     #ifdef LIGHTMAP_ON
         ambientOrLightmapUV.xy = v.uv1.xy * unity_LightmapST.xy + unity_LightmapST.zw;
@@ -89,8 +89,8 @@ struct VertexOutputForwardBase_f3VC
 	float4 pos							: SV_POSITION;
 	float4 tex							: TEXCOORD0;
 	half3 eyeVec 						: TEXCOORD1;
-	half4 tangentToWorldAndPackedData[3]    : TEXCOORD2;    // [3x3:tangentToWorld | 1x3:viewDirForParallax or worldPos]
-	half4 ambientOrLightmapUV			: TEXCOORD5;	// SH or Lightmap UV
+	float4 tangentToWorldAndPackedData[3]    : TEXCOORD2;    // [3x3:tangentToWorld | 1x3:viewDirForParallax or worldPos]
+	float4 ambientOrLightmapUV			: TEXCOORD5;	// SH or Lightmap UV
 	UNITY_SHADOW_COORDS(6)
 	UNITY_FOG_COORDS(7)
 
@@ -168,7 +168,7 @@ VertexOutputForwardBase_f3VC vertForwardBase_f3VC (VertexInput_f3VC v)
 
 
 // [RMS] added multiply by color & alpha
-half4 fragForwardBaseInternal_f3VC (VertexOutputForwardBase_f3VC i)
+float4 fragForwardBaseInternal_f3VC (VertexOutputForwardBase_f3VC i)
 {
 	FRAGMENT_SETUP(s);
 	//s.normalWorld = i.mynormal;
@@ -182,7 +182,7 @@ half4 fragForwardBaseInternal_f3VC (VertexOutputForwardBase_f3VC i)
 	half occlusion = Occlusion(i.tex.xy);
 	UnityGI gi = FragmentGI (s, occlusion, i.ambientOrLightmapUV, atten, mainLight);
 
-	half4 c = UNITY_BRDF_PBS (s.diffColor, s.specColor, s.oneMinusReflectivity, s.smoothness, s.normalWorld, -s.eyeVec, gi.light, gi.indirect);
+	float4 c = UNITY_BRDF_PBS (s.diffColor, s.specColor, s.oneMinusReflectivity, s.smoothness, s.normalWorld, -s.eyeVec, gi.light, gi.indirect);
 	c.rgb += Emission(i.tex.xy);
 
 	c *= i.color;			// [RMS] multiply by our input color
@@ -192,7 +192,7 @@ half4 fragForwardBaseInternal_f3VC (VertexOutputForwardBase_f3VC i)
 	return OutputForward (c, s.alpha * i.color.a);		// [RMS] multiply by input alpha (necessary?)
 }
 
-half4 fragForwardBase_f3VC (VertexOutputForwardBase_f3VC i) : SV_Target	// backward compatibility (this used to be the fragment entry function)
+float4 fragForwardBase_f3VC (VertexOutputForwardBase_f3VC i) : SV_Target	// backward compatibility (this used to be the fragment entry function)
 {
 	return fragForwardBaseInternal_f3VC(i);
 }
@@ -213,8 +213,8 @@ struct VertexOutputDeferred_f3VC
 	fixed4 color                        : COLOR;		// [RMS] added
 	float4 tex							: TEXCOORD0;
 	half3 eyeVec 						: TEXCOORD1;
-	half4 tangentToWorldAndPackedData[3]: TEXCOORD2;    // [3x3:tangentToWorld | 1x3:viewDirForParallax or worldPos]
-	half4 ambientOrLightmapUV			: TEXCOORD5;	// SH or Lightmap UVs
+	float4 tangentToWorldAndPackedData[3]: TEXCOORD2;    // [3x3:tangentToWorld | 1x3:viewDirForParallax or worldPos]
+	float4 ambientOrLightmapUV			: TEXCOORD5;	// SH or Lightmap UVs
 
 	#if UNITY_REQUIRE_FRAG_WORLDPOS && !UNITY_PACK_WORLDPOS_WITH_TANGENT
 		float3 posWorld                     : TEXCOORD6;
@@ -287,12 +287,12 @@ VertexOutputDeferred_f3VC vertDeferred_f3VC (VertexInput_f3VC v)
 // [RMS] added lines to multiply color & alpha by input color i.color
 void fragDeferred_f3VC (
 	VertexOutputDeferred_f3VC i,
-	out half4 outGBuffer0 : SV_Target0,
-	out half4 outGBuffer1 : SV_Target1,
-	out half4 outGBuffer2 : SV_Target2,
-	out half4 outEmission : SV_Target3			// RT3: emission (rgb), --unused-- (a)
+	out float4 outGBuffer0 : SV_Target0,
+	out float4 outGBuffer1 : SV_Target1,
+	out float4 outGBuffer2 : SV_Target2,
+	out float4 outEmission : SV_Target3			// RT3: emission (rgb), --unused-- (a)
 #if defined(SHADOWS_SHADOWMASK) && (UNITY_ALLOWED_MRT_COUNT > 4)
-	,out half4 outShadowMask : SV_Target4       // RT4: shadowmask (rgba)
+	,out float4 outShadowMask : SV_Target4       // RT4: shadowmask (rgba)
 #endif
 )
 {
@@ -345,7 +345,7 @@ void fragDeferred_f3VC (
 	UnityStandardDataToGbuffer(data, outGBuffer0, outGBuffer1, outGBuffer2);
 
 	// Emisive lighting buffer
-	outEmission = half4(emissiveColor, 1);
+	outEmission = float4(emissiveColor, 1);
 
 	// Baked direct lighting occlusion if any
 	#if defined(SHADOWS_SHADOWMASK) && (UNITY_ALLOWED_MRT_COUNT > 4)
