@@ -362,52 +362,67 @@ namespace f3
                 ? Factory.MakeMaterial(widgetType) : material;
             var useHoverMaterial = (Factory.UniqueColorPerWidget || hoverMaterial == null) 
                 ? Factory.MakeHoverMaterial(widgetType) : hoverMaterial;
-            var go = AppendMeshGO(name, Factory.MakeGeometry(widgetType), useMaterial, RootGameObject, true);
+
+            fGameObject go;
 
             Standard3DTransformWidget widget = null;
             switch (widgetType) {
                 case AxisGizmoFlags.AxisTranslateX:
                 case AxisGizmoFlags.AxisTranslateY:
                 case AxisGizmoFlags.AxisTranslateZ:
+                {
+                    go = AppendMeshGO(name, Factory.MakeGeometry(widgetType), useMaterial, RootGameObject, true);
                     widget = new AxisTranslationWidget(nAxis) {
                         RootGameObject = go, StandardMaterial = useMaterial, HoverMaterial = useHoverMaterial,
                         TranslationScaleF = () => { return TranslateSpeed / parentScene.GetSceneScale(); }
                     };
                     break;
-
+                }
+                
                 case AxisGizmoFlags.AxisRotateX:
                 case AxisGizmoFlags.AxisRotateY:
                 case AxisGizmoFlags.AxisRotateZ:
+                {
+                    go = AppendMeshGO(name, Factory.MakeGeometry(widgetType), useMaterial, RootGameObject, true);
                     widget = new AxisTrackballRotationWidget(nAxis) {
                         RootGameObject = go, StandardMaterial = useMaterial, HoverMaterial = useHoverMaterial,
                     };
                     break;
+                }
 
                 case AxisGizmoFlags.PlaneTranslateX:
                 case AxisGizmoFlags.PlaneTranslateY:
                 case AxisGizmoFlags.PlaneTranslateZ:
+                {
+                    go = AppendMeshGO(name, Factory.MakeGeometry(widgetType), useMaterial, RootGameObject, true);
                     widget = new PlaneTranslationWidget(nAxis) {
                         RootGameObject = go, StandardMaterial = useMaterial, HoverMaterial = useHoverMaterial,
                         TranslationScaleF = () => { return TranslateSpeed / parentScene.GetSceneScale(); }
                     };
                     break;
+                }
 
                 case AxisGizmoFlags.UniformScale:
+                {
+                    go = AppendMeshGO(name, Factory.MakeGeometry(widgetType), useMaterial, RootGameObject, true);
                     widget = new UniformScaleWidget(parentScene.ActiveCamera) {
                         RootGameObject = go, StandardMaterial = useMaterial, HoverMaterial = useHoverMaterial,
                         ScaleMultiplierF = () => { return ScaleSpeed / parentScene.GetSceneScale(); }
                     };
                     break;
+                }
 
                 default:
                 {
-                    RemoveGO((fGameObject)go);
-                    go.Destroy();
                     throw new Exception("DefaultAxisGizmoWidgetFactory.MakeHoverMaterial: invalid widget type " + widget.ToString());
                 }
             }
 
-            Widgets[go] = widget;
+            if (go != null)
+            {
+                Widgets[go] = widget;
+            }
+            
             return go;
         }
 
