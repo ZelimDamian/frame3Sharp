@@ -5,7 +5,6 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
 using f3;
-using DG.Tweening;
 
 namespace f3
 {
@@ -52,11 +51,15 @@ namespace f3
             if (bShow) {
                 cg.alpha = 0;
                 this.gameObject.SetVisible(true);
-                DOTween.To(() => { return cg.alpha; }, x => { cg.alpha = x; }, 1.0f, TransitionInSpeed);
+//                DOTween.To(() => { return cg.alpha; }, x => { cg.alpha = x; }, 1.0f, TransitionInSpeed);
             } else {
-                DOTween.To(() => { return cg.alpha; }, x => { cg.alpha = x; }, 0.0f, TransitionOutSpeed)
-                    .OnComplete(
-                        () => { on_hide_transition_complete(); });
+//                DOTween.To(() => { return cg.alpha; }, x => { cg.alpha = x; }, 0.0f, TransitionOutSpeed)
+//                    .OnComplete(
+//                () =>
+//                {
+                    this.gameObject.SetVisible(false);
+                    on_hide_transition_complete();
+//                });
             }
         }
 

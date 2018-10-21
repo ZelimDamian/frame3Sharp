@@ -176,9 +176,6 @@ namespace f3 {
             //   - must disable audio listener if it exists
             //   - do depth clear so we can draw on top of other layers
             foreach ( Camera cam in newCameras ) {
-                AudioListener listener = cam.GetComponent<AudioListener>();
-                if (listener != null)
-                    listener.enabled = false;
 
                 cam.clearFlags = CameraClearFlags.Depth;
 

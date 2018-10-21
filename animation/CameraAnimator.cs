@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections;
 using UnityEngine;
-using DG.Tweening;
 using g3;
 
 namespace f3
@@ -299,38 +298,6 @@ namespace f3
         IEnumerator Teleport_Level_Helper(Vector3f vMoveToLocation, Vector3f vNewTargetLocation, Vector3f vPivotAround, float fLevelRotateAngle, float duration)
         {
             yield return null;
-            Sequence mySequence = DOTween.Sequence();
-            mySequence.Append(
-                ((Material)fadeObject.GetMaterial()).DOFade(1.0f, duration / 3.0f).OnComplete(() => {
-                    fGameObject sceneGO = UseScene.RootGameObject;
-
-                    // set target to new target location explicitly, then reset orbit altitude.
-                    // now we are level with ground but not at location
-                    CameraTarget = vPivotAround;
-                    UseCamera.Manipulator().ResetSceneOrbit(UseScene, false, true, true);
-
-                    // add planar rotation if we need it
-                    if (fLevelRotateAngle != 0)
-                        UseCamera.Manipulator().SceneOrbit(UseScene, UseCamera, fLevelRotateAngle, 0.0f);
-
-                    // figure out the pan that we would apply to camera, opposite is pan to scene
-                    Vector3f delta = UseCamera.GetPosition() - vMoveToLocation;
-                    sceneGO.SetPosition(sceneGO.GetPosition() + delta);
-                    // also have to shift scene target pos
-                    CameraTarget = vNewTargetLocation + delta;
-
-                    UseCamera.SetTargetVisible(true);
-                }));
-            mySequence.AppendInterval(duration / 3.0f);
-            mySequence.Append(
-                ((Material)fadeObject.GetMaterial()).DOFade(0.0f, duration / 3.0f));
-
-            // add a delay before we hide target
-            mySequence.AppendInterval(1.0f);
-            mySequence.OnComplete(() => {
-                UseCamera.SetTargetVisible(false);
-            });
-
         }
 
 
@@ -338,35 +305,22 @@ namespace f3
         IEnumerator SmoothTranslateRotate(Vector3 toPosition, Quaternion toOrientation, float duration)
         {
             yield return null;
-            UseCamera.SetTargetVisible(true);
-            ((GameObject)UseScene.RootGameObject).transform.DOMove(toPosition, duration).OnComplete(
-                () => { UseCamera.SetTargetVisible(false); });
-            ((GameObject)UseScene.RootGameObject).transform.DORotateQuaternion(toOrientation, duration);
         }
 
         IEnumerator SmoothTranslate(Vector3 to, float duration)
         {
             yield return null;
             UseCamera.SetTargetVisible(true);
-            ((GameObject)UseScene.RootGameObject).transform.DOMove(to, duration).OnComplete(
-                () => { UseCamera.SetTargetVisible(false); });
         }
         IEnumerator SmoothMoveTarget(Vector3 to, float duration)
         {
             yield return null;
-            DOTween.To(() => CameraTarget, x => CameraTarget = x, to, duration);
         }
 
 
         IEnumerator SmoothDipToBlack(float duration)
         {
             yield return null;
-            Sequence mySequence = DOTween.Sequence();
-            mySequence.Append(
-                ((Material)fadeObject.GetMaterial()).DOFade(1.0f, duration / 4.0f));
-            mySequence.AppendInterval(duration / 2.0f);
-            mySequence.Append(
-                ((Material)fadeObject.GetMaterial()).DOFade(0.0f, duration / 4.0f));
         }
 
 
@@ -374,13 +328,6 @@ namespace f3
         IEnumerator SmoothOrbitTo(float azimuth, float altitude, float duration)
         {
             yield return null;
-
-            var manip = UseCamera.Manipulator();
-            Vector2f target = new Vector2f(azimuth, altitude);
-
-            DOTween.To(() => { return new Vector2f(manip.TurntableAzimuthD, manip.TurntableAltitudeD); },
-                (v) => { manip.SceneOrbit(UseScene, UseCamera, v.x, v.y, true); },
-                target, duration);
         }
 
 
@@ -396,17 +343,6 @@ namespace f3
         IEnumerator FadeTransitionHelper(Action fadeAction, float duration)
         {
             yield return null;
-            Sequence mySequence = DOTween.Sequence();
-            mySequence.Append(
-                ((Material)fadeObject.GetMaterial()).DOFade(1.0f, duration / 3.0f).OnComplete(() => {
-                    // once we have faded we can do action
-                    fadeAction();
-                }));
-            // wait for 1/3
-            mySequence.AppendInterval(duration / 3.0f);
-            // fade back in
-            mySequence.Append(
-                ((Material)fadeObject.GetMaterial()).DOFade(0.0f, duration / 3.0f));
         }
 
 
