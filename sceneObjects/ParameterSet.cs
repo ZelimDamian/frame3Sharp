@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using g3;
 
 namespace f3
@@ -111,6 +112,28 @@ namespace f3
             return value;
         }
     }
+
+    public class OptionsParameter : IParameter<string>
+    {
+        public readonly List<string> Options;
+        
+        public OptionsParameter(IEnumerable<string> options)
+        {
+            Options = options.ToList();
+            name = "options_parameter";
+            defaultValue = Options.FirstOrDefault();
+        }
+        
+        public override string TypeName()
+        {
+            return "options";
+        }
+
+        public override string ClampToRange(string value)
+        {
+            return value;
+        }
+    }
     
     public class StringParameter : IParameter<string>
     {
@@ -167,6 +190,14 @@ namespace f3
             if (tmp != null) tmp(this, sName);
         }
 
+        public virtual OptionsParameter Register(string sName, IEnumerable<string> options, Func<string> getValue, Action<string> setValue, bool isAlias = false) {
+            if (FindByName(sName) != null)
+                throw new Exception("ParameterSet.Register: parameter named " + sName + " already registered!");
+            var param = new OptionsParameter(options) 
+                { name = sName, getValue = getValue, setValue = setValue, isAlias = isAlias };
+            vParameters.Add(param);
+            return param;
+        }
 
         public virtual FloatParameter Register(string sName, Func<float> getValue, Action<float> setValue, float defaultValue, bool isAlias = false) {
             if (FindByName(sName) != null)
