@@ -190,11 +190,11 @@ namespace f3
             if (tmp != null) tmp(this, sName);
         }
 
-        public virtual OptionsParameter Register(string sName, IEnumerable<string> options, Func<string> getValue, Action<string> setValue, bool isAlias = false) {
+        public virtual OptionsParameter Register(string sName, IEnumerable<string> options, Func<string> getValue, Action<string> setValue, string defaultValue, bool isAlias = false) {
             if (FindByName(sName) != null)
                 throw new Exception("ParameterSet.Register: parameter named " + sName + " already registered!");
             var param = new OptionsParameter(options) 
-                { name = sName, getValue = getValue, setValue = setValue, isAlias = isAlias };
+                { name = sName, getValue = getValue, setValue = setValue, isAlias = isAlias, defaultValue = defaultValue};
             vParameters.Add(param);
             return param;
         }
