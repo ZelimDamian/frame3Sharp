@@ -73,6 +73,7 @@ namespace f3
         public fMaterial SelectedMaterial { get; set; }
         public Dictionary<SceneObject, fMaterial> PerObjectSelectionMaterial = new Dictionary<SceneObject, fMaterial>();
         public Dictionary<SOType, fMaterial> PerTypeSelectionMaterial = new Dictionary<SOType, fMaterial>();
+        public Dictionary<SOType, Func<SceneObject, fMaterial>> PerTypeSelectionMaterialMap = new Dictionary<SOType, Func<SceneObject, fMaterial>>();
         public bool DisableSelectionMaterial = false;
 
 
@@ -518,6 +519,16 @@ namespace f3
             return (found != null);
         }
 
+        public bool SelectionTypeMatch<T>(int nCount) where T : class
+        {
+            int count = 0;
+            foreach (var so in vSelected) {
+                if (so is T)
+                    count++;
+            }
+            return count == nCount;
+        }
+
 
         bool is_selectable(SceneObject s) {
             return s.IsSelectable && (SelectionMask == null || SelectionMask.Contains(s) == false );
@@ -542,8 +553,9 @@ namespace f3
                     }
                     var list = new List<SceneObject>(vSelected);
                     vSelected.Clear();
-                    if (DeselectedEvent != null) {
-                        foreach (var so in list)
+                    foreach (var so in list) {
+                        so.OnDeselected();
+                        if (DeselectedEvent != null)
                             DeselectedEvent(so);
                     }
                 }
@@ -551,6 +563,7 @@ namespace f3
 				vSelected.Add(s);
                 if (DisableSelectionMaterial == false)
                     push_selection_material(s);
+                s.OnSelected();
                 if (SelectedEvent != null)
                     SelectedEvent(s);
                 OnSelectionChanged(EventArgs.Empty);
@@ -572,10 +585,15 @@ namespace f3
             if ( DisableSelectionMaterial == false )
                 s.PopOverrideMaterial();        // assume we only pushed once!
 			vSelected.Remove(s);
+            s.OnDeselected();
             if (DeselectedEvent != null)
                 DeselectedEvent(s);
 			OnSelectionChanged(EventArgs.Empty);
 		}
+        public void Deselect(IEnumerable<SceneObject> objects) {
+            foreach (var so in objects)
+                Deselect(so);
+        }
 
 		public void ClearSelection()
         {
@@ -592,8 +610,9 @@ namespace f3
             }
             var list = vSelected;
 			vSelected = new List<SceneObject>();
-            if (DeselectedEvent != null) {
-                foreach (var so in list)
+            foreach (var so in list) {
+                so.OnDeselected();
+                if (DeselectedEvent != null)
                     DeselectedEvent(so);
             }
 			OnSelectionChanged(EventArgs.Empty);
@@ -653,6 +672,40 @@ namespace f3
         }
 
 
+        public void Show(SceneObject so)
+        {
+            so.RootGameObject.SetVisible(true);
+            if (so is SOCollection) {
+                foreach (SceneObject childso in (so as SOCollection).GetChildren())
+                    Show(childso);
+            }
+        }
+        public void Hide(SceneObject so)
+        {
+            so.RootGameObject.SetVisible(false);
+            if (so is SOCollection) {
+                foreach (SceneObject childso in (so as SOCollection).GetChildren())
+                    Hide(childso);
+            }
+        }
+        public void SetVisible(SceneObject so, bool bVisible)
+        {
+            if (so.RootGameObject.IsVisible() != bVisible) {
+                if (bVisible)   Show(so);
+                else            Hide(so);
+            }
+        }
+        public bool IsVisible(SceneObject so)
+        {
+            return so.RootGameObject.IsVisible();
+        }
+
+
+
+
+
+
+
 
         public List<SceneUIElement> UIElements { 
 			get { return vUIElements; }
@@ -689,6 +742,21 @@ namespace f3
                 sceneRoot.AddChild(transient_objects, false);
             }
         }
+
+
+        public void Show(SceneUIElement elem) {
+            elem.RootGameObject.SetVisible(true);
+        }
+        public void Hide(SceneUIElement elem) {
+            elem.RootGameObject.SetVisible(false);
+        }
+        public void SetVisible(SceneUIElement elem, bool bVisible) {
+            if (elem.RootGameObject.IsVisible() != bVisible) {
+                if (bVisible)   Show(elem);
+                else            Hide(elem);
+            }
+        }
+
 
 
 
@@ -923,6 +991,15 @@ namespace f3
                 so.PushOverrideMaterial(typeMat);
                 return;
             }
+            Func<SceneObject, fMaterial> matMap;
+            if ( PerTypeSelectionMaterialMap.TryGetValue(so.Type, out matMap) ) {
+                fMaterial useMat = matMap(so);
+                if ( useMat != null ) {
+                    so.PushOverrideMaterial(useMat);
+                    return;
+                }
+            }
+            
             so.PushOverrideMaterial(SelectedMaterial);
         }
 

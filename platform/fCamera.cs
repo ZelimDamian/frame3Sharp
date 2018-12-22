@@ -130,12 +130,10 @@ namespace f3
             return camera.transform.right;
         }
 
-        public bool IsOrthographic
-        {
-            get
-            {
-                return camera.orthographic;
-            }
+
+        public bool IsOrthographic {
+            get { return camera.orthographic; }
+            set { camera.orthographic = value; }
         }
 
         //https://docs.unity3d.com/ScriptReference/Camera-orthographicSize.html
@@ -143,7 +141,7 @@ namespace f3
         public float OrthoHeight
         {
             get { return camera.orthographicSize * 2; }
-            set { camera.orthographicSize = value / 2.0f; }
+            set {  camera.orthographicSize = value / 2; }
         }
 
 
@@ -161,6 +159,18 @@ namespace f3
         {
             get { return camera.aspect * camera.fieldOfView; }
         }
+
+
+        public float NearClipPlane {
+            get { return camera.nearClipPlane; }
+            set { camera.nearClipPlane = value; }
+        }
+
+        public float FarClipPlane {
+            get { return camera.farClipPlane; }
+            set { camera.farClipPlane = value; }
+        }
+
 
 
         public Vector3f GetTarget()

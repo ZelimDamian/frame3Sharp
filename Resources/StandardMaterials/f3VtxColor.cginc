@@ -86,7 +86,7 @@ inline float4 VertexGIForward_f3VC(VertexInput_f3VC v, float3 posWorld, half3 no
 //
 struct VertexOutputForwardBase_f3VC
 {
-	float4 pos							: SV_POSITION;
+	UNITY_POSITION(pos);
 	float4 tex							: TEXCOORD0;
 	half3 eyeVec 						: TEXCOORD1;
 	float4 tangentToWorldAndPackedData[3]    : TEXCOORD2;    // [3x3:tangentToWorld | 1x3:viewDirForParallax or worldPos]
@@ -206,7 +206,7 @@ float4 fragForwardBase_f3VC (VertexOutputForwardBase_f3VC i) : SV_Target	// back
 // [RMS] added color member
 struct VertexOutputDeferred_f3VC
 {
-	float4 pos							: SV_POSITION;
+	UNITY_POSITION(pos);
 	fixed4 color                        : COLOR;		// [RMS] added
 	float4 tex							: TEXCOORD0;
 	half3 eyeVec 						: TEXCOORD1;

@@ -23,6 +23,16 @@ namespace f3
         }
 
 
+        public static T CreateParentTypeGO<T>(string sName)
+            where T : fGameObject, new()
+        {
+            GameObject go = new GameObject(sName);
+            T fgo = new T();
+            fgo.Initialize(go, FGOFlags.NoFlags);
+            return fgo;
+        }
+
+
         public static fGameObject CreateTrackingGO(string sName, fGameObject trackGO)
         {
             GameObject go = new GameObject(sName);
@@ -111,6 +121,19 @@ namespace f3
             go.SetMaterial(material, bShareMaterial);
             return new fDiscGameObject(go, new fMesh(go.GetSharedMesh()),  fRadius);
         }
+
+        public static fDiscGameObject CreateDiscGO(string sName, float fRadius, float fStartAngleDeg, float fEndAngleDeg, fMaterial material, bool bShareMaterial, bool bCollider)
+        {
+            GameObject go = new GameObject(sName);
+            fMesh discMesh = PrimitiveCache.GetPrimitiveMesh(fPrimitiveType.Disc);
+            initialize_meshgo(go, discMesh, bCollider, true);
+            go.SetMaterial(material, bShareMaterial);
+            fDiscGameObject discGO = new fDiscGameObject(go, new fMesh(go.GetSharedMesh()), fRadius);
+            discGO.SetStartAngleDeg(fStartAngleDeg);
+            discGO.SetEndAngleDeg(fEndAngleDeg);
+            return discGO;
+        }
+
 
         // create a subclass of fDiscGameObject
         public static T CreateDiscTypeGO<T>(string sName, float fRadius, fMaterial material, bool bShareMaterial, bool bCollider)

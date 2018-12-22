@@ -109,7 +109,11 @@ namespace f3 {
         fCamera hudCamera;
         fCamera uiCamera;
         fCamera cursorCamera;
+
+        bool is_orthographic_view = false;
+
         FContext controller;
+
 
 
         public fCamera MainCamera {
@@ -144,6 +148,8 @@ namespace f3 {
                     child.Destroy();
                 }
             }
+
+            is_orthographic_view = mainCamera.IsOrthographic;
 
             List<Camera> newCameras = new List<Camera>();
 
@@ -224,7 +230,59 @@ namespace f3 {
             FPlatform.OrthoUICamera = uiCamera;
             FPlatform.CursorCamera = cursorCamera;
         }
-		
+
+
+
+        /// <summary>
+        /// If we are using an orthographic camera, then to zoom we need to change 
+        /// Camera.orthographicSize. However we need to transfer this change to the
+        /// rest of the cameras!
+        /// </summary>
+        public void UpdateMainCamOrthoSize()
+        {
+            if (widgetCamera != null)
+                widgetCamera.OrthoHeight = mainCamera.OrthoHeight;
+            if (hudCamera != null)
+                hudCamera.OrthoHeight = mainCamera.OrthoHeight;
+            if (cursorCamera != null)
+                cursorCamera.OrthoHeight = mainCamera.OrthoHeight;
+
+        }
+
+
+        /// <summary>
+        /// Set the far clipping plane of all the 3D-view cameras
+        /// </summary>
+        public void UpdateMainCamFarDistance(float distance)
+        {
+            if (mainCamera != null)
+                mainCamera.FarClipPlane = distance;
+            if (widgetCamera != null)
+                widgetCamera.FarClipPlane = distance;
+            if (hudCamera != null)
+                hudCamera.FarClipPlane = distance;
+            if (cursorCamera != null)
+                cursorCamera.FarClipPlane = distance;
+        }
+
+
+        /// <summary>
+        /// configure the 3D-view cameras for orthographic/perspective
+        /// </summary>
+        public void UpdateOrthographic(bool orthographic)
+        {
+            if (is_orthographic_view == orthographic)
+                return;
+            if (mainCamera != null)
+                mainCamera.IsOrthographic = orthographic;
+            if (widgetCamera != null)
+                widgetCamera.IsOrthographic = orthographic;
+            if (hudCamera != null)
+                hudCamera.IsOrthographic = orthographic;
+            if (cursorCamera != null)
+                cursorCamera.IsOrthographic = orthographic;
+            is_orthographic_view = orthographic;
+        }
 
 	}
 

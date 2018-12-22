@@ -117,6 +117,41 @@ namespace f3
         }
 
 
+
+        /// <summary>
+        /// </summary>
+        public void AnimatePanZoomFocusOrtho(Vector3f focusPoint, CoordSpace eSpace, float targetHeight, float duration)
+        {
+            if (duration > 0 && ShowTargetDuringAnimations)
+                UseCamera.SetTargetVisible(true);
+
+            Vector3f focusPointS = (eSpace == CoordSpace.WorldCoords) ? UseScene.ToSceneP(focusPoint) : focusPoint;
+            Vector3f startFocusS = UseScene.ToSceneP(UseCamera.GetTarget());
+            float startHeight = UseCamera.OrthoHeight;
+
+            Action<float> tweenF = (t) => {
+                float smooth_t = MathUtil.WyvillRise01(t);
+                Vector3f newTargetS = Vector3f.Lerp(startFocusS, focusPointS, smooth_t);
+                UseCamera.Manipulator().PanFocusOnScenePoint(UseScene, UseCamera, newTargetS);
+
+                float toHeight = MathUtil.Lerp(startHeight, targetHeight, t);
+                float curHeight = UseCamera.OrthoHeight;
+                float dh = toHeight - curHeight;
+                UseCamera.Manipulator().SceneZoom(UseScene, UseCamera, -dh);
+            };
+
+            if (duration > 0) {
+                TweenAnimator anim = new TweenAnimator(tweenF, duration) {
+                    OnCompletedF = () => { UseCamera.SetTargetVisible(false); }
+                };
+                UseScene.ObjectAnimator.Register(anim);
+            } else
+                tweenF(1.0f);
+        }
+
+
+
+
         /// <summary>
         /// Animate camera so that centerPt moves to center of camera, and width is visible.
         /// Camera target is also set to centerPt
@@ -125,9 +160,14 @@ namespace f3
         {
             if (eSpace != CoordSpace.WorldCoords)
                 width = UseScene.ToWorldDimension(width);
-            float fFitDistW = UseCamera.Manipulator().GetFitWidthCameraDistance(width);
             Vector3f focusPointW = (eSpace == CoordSpace.WorldCoords) ? centerPt : UseScene.ToWorldP(centerPt);
-            AnimatePanZoomFocus(focusPointW, CoordSpace.WorldCoords, fFitDistW, duration);
+            if (UseCamera.IsOrthographic) {
+                float targetHeight = UseCamera.AspectRatio * width;
+                AnimatePanZoomFocusOrtho(focusPointW, CoordSpace.WorldCoords, targetHeight, duration);
+            } else {
+                float fFitDistW = UseCamera.Manipulator().GetFitWidthCameraDistance(width);
+                AnimatePanZoomFocus(focusPointW, CoordSpace.WorldCoords, fFitDistW, duration);
+            }
         }
 
 
@@ -139,9 +179,13 @@ namespace f3
         {
             if (eSpace != CoordSpace.WorldCoords)
                 height = UseScene.ToWorldDimension(height);
-            float fFitDistW = UseCamera.Manipulator().GetFitHeightCameraDistance(height);
             Vector3f focusPointW = (eSpace == CoordSpace.WorldCoords) ? centerPt : UseScene.ToWorldP(centerPt);
-            AnimatePanZoomFocus(focusPointW, CoordSpace.WorldCoords, fFitDistW, duration);
+            if (UseCamera.IsOrthographic) {
+                AnimatePanZoomFocusOrtho(focusPointW, CoordSpace.WorldCoords, height, duration);
+            } else {
+                float fFitDistW = UseCamera.Manipulator().GetFitHeightCameraDistance(height);
+                AnimatePanZoomFocus(focusPointW, CoordSpace.WorldCoords, fFitDistW, duration);
+            }
         }
 
 
@@ -206,6 +250,48 @@ namespace f3
             } else
                 tweenF(1.0f);
         }
+
+
+
+        /// <summary>
+        /// Ortho variant of Turntable-rotate to set azimuth/altitude, while also re-centering camera on target at given distance.
+        /// </summary>
+        public void AnimateOrbitZoomFocusToOrtho(float toAzimuth, float toAltitude, float targetHeight, Vector3f toTargetS, float duration = 0.25f)
+        {
+            if (duration > 0 && ShowTargetDuringAnimations)
+                UseCamera.SetTargetVisible(true);
+
+            Vector3f startTargetS = UseScene.ToSceneP(UseCamera.GetTarget());
+            float startAltitude = UseCamera.Manipulator().TurntableAltitudeD;
+            float startAzimuth = UseCamera.Manipulator().TurntableAzimuthD;
+            float startOrthoHeight = UseCamera.OrthoHeight;
+
+            Action<float> tweenF = (t) => {
+                Vector3f newTargetS = Vector3f.Lerp(startTargetS, toTargetS, t);
+                //Vector3f newTargetW = UseScene.ToWorldP(newTargetS);
+                //UseCamera.Manipulator().ScenePanFocus(UseScene, UseCamera, newTargetW, false);
+                UseCamera.Manipulator().PanFocusOnScenePoint(UseScene, UseCamera, newTargetS);
+
+                float alt = MathUtil.Lerp(startAltitude, toAltitude, t);
+                float az = MathUtil.Lerp(startAzimuth, toAzimuth, t);
+                UseCamera.Manipulator().SceneOrbit(UseScene, UseCamera, az, alt, true);
+
+                float curHeight = UseCamera.OrthoHeight;
+                float toHeight = MathUtil.Lerp(startOrthoHeight, targetHeight, t);
+                float dh = toHeight - curHeight;
+                UseCamera.Manipulator().SceneZoom(UseScene, UseCamera, -dh);
+            };
+
+            if (duration > 0) {
+                TweenAnimator anim = new TweenAnimator(tweenF, duration) {
+                    OnCompletedF = () => { UseCamera.SetTargetVisible(false); }
+                };
+                UseScene.ObjectAnimator.Register(anim);
+            } else
+                tweenF(1.0f);
+        }
+
+
 
 
 
@@ -276,6 +362,42 @@ namespace f3
                 tweenF(1.0f);
         }
 
+
+
+
+        /// <summary>
+        /// Ortho variant of Tumble scene to given orientation, while also re-centering camera on target at given distance.
+        /// </summary>
+        public void AnimateTumbleZoomFocusToOrtho(Quaternionf toOrientation, float targetHeight, Vector3f toTargetS, float duration = 0.25f)
+        {
+            if (duration > 0 && ShowTargetDuringAnimations)
+                UseCamera.SetTargetVisible(true);
+
+            Vector3f startTargetS = UseScene.ToSceneP(UseCamera.GetTarget());
+            Frame3f startF = UseScene.SceneFrame;
+            float startOrthoHeight = UseCamera.OrthoHeight;
+
+            Action<float> tweenF = (t) => {
+                Vector3f newTargetS = Vector3f.Lerp(startTargetS, toTargetS, t);
+                UseCamera.Manipulator().PanFocusOnScenePoint(UseScene, UseCamera, newTargetS);
+
+                Quaternionf rot = Quaternion.Slerp(startF.Rotation, toOrientation, t);
+                UseScene.RootGameObject.SetLocalRotation(rot);
+
+                float curHeight = UseCamera.OrthoHeight;
+                float toHeight = MathUtil.Lerp(startOrthoHeight, targetHeight, t);
+                float dh = toHeight - curHeight;
+                UseCamera.Manipulator().SceneZoom(UseScene, UseCamera, -dh);
+            };
+
+            if (duration > 0) {
+                TweenAnimator anim = new TweenAnimator(tweenF, duration) {
+                    OnCompletedF = () => { UseCamera.SetTargetVisible(false); }
+                };
+                UseScene.ObjectAnimator.Register(anim);
+            } else
+                tweenF(1.0f);
+        }
 
 
 

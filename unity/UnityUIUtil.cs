@@ -277,6 +277,7 @@ namespace f3
                 } catch { return; }
             });
             field.text = getValue().ToString();
+            field.onValidateInput = ValidateDecimalInput;
         }
 
 
@@ -330,6 +331,32 @@ namespace f3
 
 
 
+        static char local_decimal_separator = (char)0;
+        static char LocalDecimalSeparator {
+            get {
+                if (local_decimal_separator == 0)
+                    local_decimal_separator = System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator[0];
+                return local_decimal_separator;
+            }
+        }
+
+        public static char ValidateDecimalInput(string text, int pos, char ch)
+        {
+            // Integer and decimal
+            bool cursorBeforeDash = (pos == 0 && text.Length > 0 && text[0] == '-');
+            if (!cursorBeforeDash) {
+                if (ch >= '0' && ch <= '9')
+                    return ch;
+                if (ch == '-' && pos == 0)
+                    return ch;
+                if (ch == LocalDecimalSeparator && text.Contains(LocalDecimalSeparator) == false)
+                    return ch;
+            }
+            return (char)0;
+        }
+
+
+
 
 #if F3_ENABLE_TEXT_MESH_PRO
 
@@ -368,11 +395,6 @@ namespace f3
             field.onValidateInput = (text, pos, ch) => {
                 return ValidateDecimal_TMP(text, pos, ch, field);
             };
-        }
-
-
-        static char LocalDecimalSeparator {
-            get { return System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator[0]; }
         }
 
         /// <summary>
@@ -497,7 +519,7 @@ namespace f3
         /// Utility class for tabbing between elements in a dialog. Add them in-order, then
         /// use following code in Update()
         /// 
-        /// if (Input.GetKeyDown(KeyCode.Tab)) {
+        /// if (tabber.HasFocus() && Input.GetKeyUp(KeyCode.Tab)) {
         ///     if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
         ///         tabber.Previous();
         ///     else
@@ -511,6 +533,15 @@ namespace f3
             public void Add(GameObject go) {
                 tab_order.Add(go);
             }
+            public void Add(Selectable s) {
+                tab_order.Add(s.gameObject);
+            }
+
+            public bool HasFocus()
+            {
+                GameObject selectedObject = EventSystem.current.currentSelectedGameObject;
+                return tab_order.Contains(selectedObject);
+            }
 
             public void Next()
             {
@@ -519,6 +550,9 @@ namespace f3
                     for (int k = 0; k < tab_order.Count; k++) {
                         if (tab_order[k] == selectedObject) {
                             int next = (k + 1) % tab_order.Count;
+                            // skip hidden objects
+                            while ( (tab_order[next].IsVisible() == false || tab_order[next].GetComponent<Selectable>().interactable == false)   && next != k)
+                                next = (next + 1) % tab_order.Count;
                             EventSystem.current.SetSelectedGameObject(tab_order[next]);
                             return;
                         }
@@ -551,63 +585,116 @@ namespace f3
 
 
 
+    }
 
 
 
 
 
 
-        /// <summary>
-        /// Utility wrapper around a UnityUI DropDown that handles mapping between sequential integer
-        /// indices and arbitrary ID integers that we want to associate with label strings
-        /// </summary>
-        public class MappedDropDown
+    /// <summary>
+    /// Utility wrapper around a UnityUI DropDown that handles mapping between sequential integer
+    /// indices and arbitrary ID integers that we want to associate with label strings
+    /// </summary>
+    public class MappedDropDown
+    {
+        public Dropdown drop;
+        Func<int> getId;
+        Action<int> setId;
+
+        public MappedDropDown(Dropdown d, Func<int> getId, Action<int> setId)
         {
-            public Dropdown drop;
-            Func<int> getId;
-            Action<int> setId;
+            drop = d;
+            this.getId = getId;
+            this.setId = setId;
+            UnityUIUtil.DropDownAddHandlers(drop, getIndexFromId, setIdFromIndex, 0, int.MaxValue);
+        }
 
-            public MappedDropDown(Dropdown d, Func<int> getId, Action<int> setId)
-            {
-                drop = d;
-                this.getId = getId;
-                this.setId = setId;
-                UnityUIUtil.DropDownAddHandlers(drop, getIndexFromId, setIdFromIndex, 0, int.MaxValue );
-            }
+        List<string> options = new List<string>();
+        List<int> identifiers = new List<int>();
 
-            List<string> options = new List<string>();
-            List<int> identifiers = new List<int>();
+        public void SetOptions(List<string> options, List<int> ids)
+        {
+            this.options = new List<string>(options);
+            this.identifiers = new List<int>(ids);
 
-            public void SetOptions(List<string> options, List<int> ids)
-            {
-                this.options = new List<string>(options);
-                this.identifiers = new List<int>(ids);
+            drop.ClearOptions();
+            drop.AddOptions(options);
+        }
 
-                drop.ClearOptions();
-                drop.AddOptions(options);
-            }
-
-            public void SetFromId(int id)
-            {
-                drop.value = getIndexFromId();
-            }
-
-
-            int getIndexFromId()
-            {
-                int id = getId();
-                int idx = identifiers.FindIndex((j) => { return j == id; });
-                return (idx < 0 || idx >= options.Count) ? 0 : idx;
-            }
-            void setIdFromIndex(int dropdown_index)
-            {
-                int id = identifiers[dropdown_index];
-                setId(id);
-            }
-
+        public void SetFromId(int id)
+        {
+            drop.value = getIndexFromId();
         }
 
 
+        int getIndexFromId()
+        {
+            int id = getId();
+            int idx = identifiers.FindIndex((j) => { return j == id; });
+            return (idx < 0 || idx >= options.Count) ? 0 : idx;
+        }
+        void setIdFromIndex(int dropdown_index)
+        {
+            int id = identifiers[dropdown_index];
+            setId(id);
+        }
+
+    }
+
+
+
+
+
+
+
+
+    /// <summary>
+    /// Attach this script to a unity UI widget and then you will get onLongPress() event
+    /// after pressing down for HoldTime. If RepeatTime > 0, then onLongPress will continue
+    /// to fire at that time interval until button is released.
+    /// Notes: https://forum.unity.com/threads/long-press-gesture-on-ugui-button.264388/
+    /// </summary>
+    public class ButtonLongPress : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerExitHandler
+    {
+        public float HoldTime = 1.0f;
+        public float RepeatTime = 0.0f;
+
+        // todo: use this to avoid Button.OnClick() from also firing during a longpress?
+        //private bool held = false;
+        //public UnityEvent onClick = new UnityEvent();
+
+        public UnityEvent onLongPress = new UnityEvent();
+
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            //held = false;
+            Invoke("OnLongPress", HoldTime);
+        }
+
+        public void OnPointerUp(PointerEventData eventData)
+        {
+            CancelInvoke("OnLongPress");
+
+            //if (!held)
+            //    onClick.Invoke();
+        }
+
+        public void OnPointerExit(PointerEventData eventData)
+        {
+            CancelInvoke("OnLongPress");
+        }
+
+        void OnLongPress()
+        {
+            //held = true;
+            onLongPress.Invoke();
+
+            // spawn repeat
+            if (RepeatTime > 0) {
+                Invoke("OnLongPress", RepeatTime);
+            }
+        }
     }
 
 
