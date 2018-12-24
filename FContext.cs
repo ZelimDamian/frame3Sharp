@@ -588,7 +588,7 @@ namespace f3 {
                         cap = captureMouse.element.UpdateCapture(input, captureMouse.data);
                     } catch (Exception e) {
                         DebugUtil.Log(2, "FContext.HandleInput_MouseOrGamepad: exception in UpdateCapture! " + e.Message);
-                        captureMouse.element.ForceEndCapture(input, captureMouse.data);
+                        captureMouse?.element.ForceEndCapture(input, captureMouse.data);
                         captureMouse = null;
                         if (FPlatform.InUnityEditor())
                             throw;

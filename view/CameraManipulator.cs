@@ -265,23 +265,14 @@ namespace f3
                     dz = fTargetDist - fMinTargetDist;
 
                 if (cam.IsOrthographic)
-            {
                 cam.OrthoHeight += dz;
-            }
-            else
-            {
+                
                 Vector3f delta = dz * fw;
                 scene.RootGameObject.Translate(-delta, false);
                 if ( bKeepTargetPos )
                     cam.SetTarget(cam.GetTarget() - delta);
             }
         }
-
-
-
-
-
-
 
         [System.Obsolete("This function does not make sense. Use PanFocusOnScenePoint or Animator().AnimatePanFocus instead")]
         public void ScenePanFocus(FScene scene, fCamera camera, Vector3f focusPointW, bool bAnimated)
