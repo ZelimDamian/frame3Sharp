@@ -157,8 +157,7 @@ namespace f3 {
             everyFrameActions = new ActionSet();
 
             // intialize camera stuff
-            camTracker = new CameraTracking();
-            camTracker.Initialize(this);
+            InitializeCameraTracking();
 
             GetScene();
             if (options.SceneInitializer != null)
@@ -216,6 +215,12 @@ namespace f3 {
             ActiveContext_HACK = this;
 
             startup_checks();
+        }
+
+        public void InitializeCameraTracking()
+        {
+            camTracker = new CameraTracking();
+            camTracker.Initialize(this);
         }
 
 
