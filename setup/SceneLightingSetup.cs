@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
 using g3;
+using Snapping = g3.Snapping;
 
 namespace f3 {
 

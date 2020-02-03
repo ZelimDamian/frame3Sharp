@@ -1,6 +1,7 @@
 ﻿using System;
-using UnityEngine;
 using g3;
+using UnityEngine;
+using Snapping = g3.Snapping;
 
 namespace f3
 {
@@ -223,8 +224,6 @@ namespace f3
                 lines.Color.a = (on_snap) ? 1.0f : 0.15f;
             });
         }
-
-
     }
 }
 

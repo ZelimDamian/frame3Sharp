@@ -1,9 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using UnityEngine;
 using g3;
+using UnityEngine;
+using Snapping = g3.Snapping;
 
 namespace f3
 {
@@ -610,10 +609,6 @@ namespace f3
 
 		#endregion
 
-
-
-
-
        #region IBoxModelElement implementation
 
 
@@ -629,7 +624,5 @@ namespace f3
         }
 
         #endregion
-
-
     }
 }
