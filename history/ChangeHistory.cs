@@ -109,6 +109,21 @@ namespace f3
         List<IChangeOp> vHistory;       // stream of changes
         int iCurrent;                   // current position in vHistory
 
+        public bool BackStepsAvailable
+        {
+            get
+            {
+                return iCurrent > 0;
+            }
+        }
+
+        public bool ForwardStepsAvailable
+        {
+            get
+            {
+                return iCurrent < vHistory.Count() - 1;
+            }
+        }
 
         public ChangeHistory()
         {
