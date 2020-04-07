@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.ComponentModel;
 
 namespace f3
 {
@@ -104,10 +105,37 @@ namespace f3
     /// on the Change nodes. To step forward/backward in chunks, Changes can be tagged with text strings.
     /// InteractionCheckpointOp is a special-case tagged node that you can use at the "end" of an interactive operation.
     /// </summary>
-    public class ChangeHistory
+    public class ChangeHistory : INotifyPropertyChanged
     {
         List<IChangeOp> vHistory;       // stream of changes
         int iCurrent;                   // current position in vHistory
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        private void ChangedHistory(PropertyChangedEventArgs e)
+        {
+            PropertyChanged?.Invoke(this, e);
+        }
+
+        private void ChangedHistory(
+            [System.Runtime.CompilerServices.CallerMemberName] string propertyName = "")
+        {
+            ChangedHistory(new PropertyChangedEventArgs(propertyName));
+        }
+
+        public int ICurrent
+        {
+            get
+            {
+                return iCurrent;
+            }
+            private set
+            {
+                iCurrent = value;
+                ChangedHistory();
+            }
+        }
+
 
         public bool BackStepsAvailable
         {
@@ -165,9 +193,9 @@ namespace f3
         /// </summary>
         public OpStatus PushChange(IChangeOp op, bool bIsApplied = false)
         {
-            DebugUtil.Log(4, "ChangeHistory.PushChange [{0}]: pushed {1}", iCurrent+1, op.Identifier());
+            DebugUtil.Log(4, "ChangeHistory.PushChange [{0}]: pushed {1}", ICurrent+1, op.Identifier());
 
-            if (vHistory.Count > 0 && iCurrent < vHistory.Count)
+            if (vHistory.Count > 0 && ICurrent < vHistory.Count)
                 TrimFuture();
 
             if (bIsApplied == false) {
@@ -182,7 +210,7 @@ namespace f3
             if (sForceSetTag != null)
                 op.Tags.Add(sForceSetTag);
             vHistory.Add(op);
-            iCurrent++;
+            ICurrent++;
 
             return OpStatus.Success;
         }
@@ -206,7 +234,7 @@ namespace f3
         /// </summary>
         public bool InPastState
         {
-            get { return iCurrent < vHistory.Count; }
+            get { return ICurrent < vHistory.Count; }
         }
 
 
@@ -215,11 +243,11 @@ namespace f3
         /// </summary>
         public OpStatus StepBack()
         {
-            if (iCurrent == 0)
+            if (ICurrent == 0)
                 return OpStatus.Success;        // weird but ok
 
-            IChangeOp op = vHistory[iCurrent - 1];
-            DebugUtil.Log(4, "ChangeHistory.StepBack [{0}/{1}]: reverting {2}", iCurrent-1, vHistory.Count, op.Identifier());
+            IChangeOp op = vHistory[ICurrent - 1];
+            DebugUtil.Log(4, "ChangeHistory.StepBack [{0}/{1}]: reverting {2}", ICurrent-1, vHistory.Count, op.Identifier());
             OpStatus result = op.Revert();
             if (result.code != OpStatus.no_error) {
                 DebugUtil.Error("[ChangeHistory::StepBack] Revert() of ChangeOp {0} failed - result was code {1} message {2}",
@@ -227,7 +255,7 @@ namespace f3
                 return result;
             }
 
-            iCurrent--;
+            ICurrent--;
             return OpStatus.Success;
         }
 
@@ -241,10 +269,10 @@ namespace f3
                 OpStatus result = StepBack();
                 if (result.code != OpStatus.no_error)
                     return result;
-                if (iCurrent == 0) {
+                if (ICurrent == 0) {
                     bContinue = false;
                 } else {
-                    IChangeOp op = vHistory[iCurrent - 1];
+                    IChangeOp op = vHistory[ICurrent - 1];
                     if (op.HasTags && op.Tags.Contains(tag))
                         bContinue = false;
                 }
@@ -268,11 +296,11 @@ namespace f3
         /// </summary>
         public OpStatus StepForward()
         {
-            if (iCurrent == vHistory.Count)
+            if (ICurrent == vHistory.Count)
                 return OpStatus.Success;
 
-            IChangeOp op = vHistory[iCurrent];
-            DebugUtil.Log(4, "ChangeHistory.StepForward [{0}/{1}]: applying {2}", iCurrent, vHistory.Count, op.Identifier());
+            IChangeOp op = vHistory[ICurrent];
+            DebugUtil.Log(4, "ChangeHistory.StepForward [{0}/{1}]: applying {2}", ICurrent, vHistory.Count, op.Identifier());
             OpStatus result = op.Apply();
             if (result.code != OpStatus.no_error) {
                 DebugUtil.Error("[ChangeHistory::StepForward] Apply() of ChangeOp {0} failed - result was code {1} message {2}",
@@ -280,7 +308,7 @@ namespace f3
                 return result;
             }
 
-            iCurrent++;
+            ICurrent++;
             return OpStatus.Success;
         }
 
@@ -295,10 +323,10 @@ namespace f3
                 OpStatus result = StepForward();
                 if (result.code != OpStatus.no_error)
                     return result;
-                if (iCurrent == vHistory.Count) {
+                if (ICurrent == vHistory.Count) {
                     bContinue = false;
                 } else {
-                    IChangeOp op = vHistory[iCurrent];
+                    IChangeOp op = vHistory[ICurrent];
                     if (op.HasTags && op.Tags.Contains(tag)) {
                         bContinue = false;
                         bFound = true;
@@ -333,12 +361,12 @@ namespace f3
                     continue;
 
                 if ( vHistory[i].Tags.Contains(tag) ) {
-                    if (i >= iCurrent)
+                    if (i >= ICurrent)
                         throw new Exception("ChangeHistory.DiscardByTag: cannot discard current or future states!");
                     vHistory[i].Cull();
                     vHistory.RemoveAt(i);
                     i--;
-                    iCurrent--;
+                    ICurrent--;
                 }
             }
         }
@@ -351,12 +379,12 @@ namespace f3
         /// </summary>
         void TrimFuture()
         {
-            if (iCurrent < vHistory.Count) {
-                for (int i = iCurrent; i < vHistory.Count; ++i)
+            if (ICurrent < vHistory.Count) {
+                for (int i = ICurrent; i < vHistory.Count; ++i)
                     vHistory[i].Cull();
-                vHistory.RemoveRange(iCurrent, vHistory.Count - iCurrent);
+                vHistory.RemoveRange(ICurrent, vHistory.Count - ICurrent);
             }
-            if (iCurrent > vHistory.Count)
+            if (ICurrent > vHistory.Count)
                 throw new Exception("ChangeHistory.TrimFuture: iCurrent points into non-existent future!");
         }
 
@@ -367,7 +395,7 @@ namespace f3
             for (int i = 0; i < vHistory.Count; ++i)
                 vHistory[i].Cull();
             vHistory = new List<IChangeOp>();
-            iCurrent = 0;
+            ICurrent = 0;
             FPlatform.SuggestGarbageCollection();
         }
 
@@ -379,14 +407,14 @@ namespace f3
             StringBuilder s = new StringBuilder();
 
 
-            s.AppendLine(string.Format("[{0}] have {1} records, current is {2}", prefix, vHistory.Count, iCurrent));
+            s.AppendLine(string.Format("[{0}] have {1} records, current is {2}", prefix, vHistory.Count, ICurrent));
             for (int i = vHistory.Count-1; i >= 0; --i) {
                 string tags = "";
                 if ( vHistory[i].HasTags ) {
                     foreach (string tag in vHistory[i].Tags)
                         tags += tag + " ";
                 }
-                string current = (i == iCurrent) ? " **" : "   ";
+                string current = (i == ICurrent) ? " **" : "   ";
 
                 s.AppendLine(string.Format("{0}[{1}] - {2} - tags: {3}", current, vHistory.Count-1-i, vHistory[i].Identifier(), tags));
             }
