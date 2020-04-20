@@ -105,51 +105,22 @@ namespace f3
     /// on the Change nodes. To step forward/backward in chunks, Changes can be tagged with text strings.
     /// InteractionCheckpointOp is a special-case tagged node that you can use at the "end" of an interactive operation.
     /// </summary>
-    public class ChangeHistory : INotifyPropertyChanged
+    public class ChangeHistory
     {
         List<IChangeOp> vHistory;       // stream of changes
-        int iCurrent;                   // current position in vHistory
 
-        public event PropertyChangedEventHandler PropertyChanged;
+        public delegate void HistoryChangedEventHandler(bool backStepsAvailable, bool forwardStepsAvailable);
+        public event HistoryChangedEventHandler HistoryChanged;
 
-        private void ChangedHistory(PropertyChangedEventArgs e)
+        // current position in vHistory
+        int iCurrent;
+        int ICurrent
         {
-            PropertyChanged?.Invoke(this, e);
-        }
-
-        private void ChangedHistory(
-            [System.Runtime.CompilerServices.CallerMemberName] string propertyName = "")
-        {
-            ChangedHistory(new PropertyChangedEventArgs(propertyName));
-        }
-
-        public int ICurrent
-        {
-            get
-            {
-                return iCurrent;
-            }
-            private set
+            get { return iCurrent; }
+            set
             {
                 iCurrent = value;
-                ChangedHistory();
-            }
-        }
-
-
-        public bool BackStepsAvailable
-        {
-            get
-            {
-                return iCurrent > 0;
-            }
-        }
-
-        public bool ForwardStepsAvailable
-        {
-            get
-            {
-                return iCurrent < vHistory.Count() - 1;
+                HistoryChanged?.Invoke(iCurrent > 0, iCurrent < vHistory.Count() - 1);
             }
         }
 
@@ -193,15 +164,17 @@ namespace f3
         /// </summary>
         public OpStatus PushChange(IChangeOp op, bool bIsApplied = false)
         {
-            DebugUtil.Log(4, "ChangeHistory.PushChange [{0}]: pushed {1}", ICurrent+1, op.Identifier());
+            DebugUtil.Log(4, "ChangeHistory.PushChange [{0}]: pushed {1}", ICurrent + 1, op.Identifier());
 
             if (vHistory.Count > 0 && ICurrent < vHistory.Count)
                 TrimFuture();
 
-            if (bIsApplied == false) {
+            if (bIsApplied == false)
+            {
                 OpStatus result = op.Apply();
-                if (result.code != OpStatus.no_error) {
-                    DebugUtil.Error("[ChangeHistory::PushChange] Apply() of ChangeOp {0} failed - code {1} message {2}", 
+                if (result.code != OpStatus.no_error)
+                {
+                    DebugUtil.Error("[ChangeHistory::PushChange] Apply() of ChangeOp {0} failed - code {1} message {2}",
                         op.Identifier(), result.code, result.message);
                     return result;
                 }
@@ -247,9 +220,10 @@ namespace f3
                 return OpStatus.Success;        // weird but ok
 
             IChangeOp op = vHistory[ICurrent - 1];
-            DebugUtil.Log(4, "ChangeHistory.StepBack [{0}/{1}]: reverting {2}", ICurrent-1, vHistory.Count, op.Identifier());
+            DebugUtil.Log(4, "ChangeHistory.StepBack [{0}/{1}]: reverting {2}", ICurrent - 1, vHistory.Count, op.Identifier());
             OpStatus result = op.Revert();
-            if (result.code != OpStatus.no_error) {
+            if (result.code != OpStatus.no_error)
+            {
                 DebugUtil.Error("[ChangeHistory::StepBack] Revert() of ChangeOp {0} failed - result was code {1} message {2}",
                     op.Identifier(), result.code, result.message);
                 return result;
@@ -265,13 +239,17 @@ namespace f3
         public OpStatus StepBackwardToAfterPreviousTag(string tag)
         {
             bool bContinue = true;
-            while (bContinue) {
+            while (bContinue)
+            {
                 OpStatus result = StepBack();
                 if (result.code != OpStatus.no_error)
                     return result;
-                if (ICurrent == 0) {
+                if (ICurrent == 0)
+                {
                     bContinue = false;
-                } else {
+                }
+                else
+                {
                     IChangeOp op = vHistory[ICurrent - 1];
                     if (op.HasTags && op.Tags.Contains(tag))
                         bContinue = false;
@@ -302,7 +280,8 @@ namespace f3
             IChangeOp op = vHistory[ICurrent];
             DebugUtil.Log(4, "ChangeHistory.StepForward [{0}/{1}]: applying {2}", ICurrent, vHistory.Count, op.Identifier());
             OpStatus result = op.Apply();
-            if (result.code != OpStatus.no_error) {
+            if (result.code != OpStatus.no_error)
+            {
                 DebugUtil.Error("[ChangeHistory::StepForward] Apply() of ChangeOp {0} failed - result was code {1} message {2}",
                     op.Identifier(), result.code, result.message);
                 return result;
@@ -319,15 +298,20 @@ namespace f3
         {
             bool bContinue = true;
             bool bFound = false;
-            while (bContinue) {
+            while (bContinue)
+            {
                 OpStatus result = StepForward();
                 if (result.code != OpStatus.no_error)
                     return result;
-                if (ICurrent == vHistory.Count) {
+                if (ICurrent == vHistory.Count)
+                {
                     bContinue = false;
-                } else {
+                }
+                else
+                {
                     IChangeOp op = vHistory[ICurrent];
-                    if (op.HasTags && op.Tags.Contains(tag)) {
+                    if (op.HasTags && op.Tags.Contains(tag))
+                    {
                         bContinue = false;
                         bFound = true;
                     }
@@ -356,11 +340,13 @@ namespace f3
         /// </summary>
         public void DiscardByTag(string tag)
         {
-            for ( int i = 0; i < vHistory.Count; ++i ) {
+            for (int i = 0; i < vHistory.Count; ++i)
+            {
                 if (vHistory[i].HasTags == false)
                     continue;
 
-                if ( vHistory[i].Tags.Contains(tag) ) {
+                if (vHistory[i].Tags.Contains(tag))
+                {
                     if (i >= ICurrent)
                         throw new Exception("ChangeHistory.DiscardByTag: cannot discard current or future states!");
                     vHistory[i].Cull();
@@ -379,7 +365,8 @@ namespace f3
         /// </summary>
         void TrimFuture()
         {
-            if (ICurrent < vHistory.Count) {
+            if (ICurrent < vHistory.Count)
+            {
                 for (int i = ICurrent; i < vHistory.Count; ++i)
                     vHistory[i].Cull();
                 vHistory.RemoveRange(ICurrent, vHistory.Count - ICurrent);
@@ -408,15 +395,17 @@ namespace f3
 
 
             s.AppendLine(string.Format("[{0}] have {1} records, current is {2}", prefix, vHistory.Count, ICurrent));
-            for (int i = vHistory.Count-1; i >= 0; --i) {
+            for (int i = vHistory.Count - 1; i >= 0; --i)
+            {
                 string tags = "";
-                if ( vHistory[i].HasTags ) {
+                if (vHistory[i].HasTags)
+                {
                     foreach (string tag in vHistory[i].Tags)
                         tags += tag + " ";
                 }
                 string current = (i == ICurrent) ? " **" : "   ";
 
-                s.AppendLine(string.Format("{0}[{1}] - {2} - tags: {3}", current, vHistory.Count-1-i, vHistory[i].Identifier(), tags));
+                s.AppendLine(string.Format("{0}[{1}] - {2} - tags: {3}", current, vHistory.Count - 1 - i, vHistory[i].Identifier(), tags));
             }
 
             DebugUtil.Log(1, s.ToString());
@@ -424,4 +413,3 @@ namespace f3
 
 
     }
-}
