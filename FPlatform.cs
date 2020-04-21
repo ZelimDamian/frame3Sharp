@@ -455,7 +455,7 @@ namespace f3
             if (p == IntPtr.Zero)
                 return null;
 
-            string s = stringFromChar(p);
+            string s = stringFromCharUnicode(p);
             return s;
 #else
             // [TODO] implement
@@ -540,7 +540,7 @@ namespace f3
         public static extern IntPtr tinyfd_openFileDialog(string aTitle, string aDefaultPathAndFile, int aNumOfFilterPatterns, string[] aFilterPatterns, string aSingleFilterDescription, int aAllowMultipleSelects);
         //IntPtr p = tinyfd_openFileDialog("select a mesh file", "c:\\scratch\\", 2, new string[] { "*.stl", "*.obj" }, "mesh files", 0);
 
-        [DllImport("tinyfiledialogs", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("tinyfiledialogs", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr tinyfd_saveFileDialog(string aTitle, string aDefaultPathAndFile, int aNumOfFilterPatterns, string[] aFilterPatterns, string aSingleFilterDescription);
         //IntPtr p = tinyfd_openFileDialog("select a mesh file", "c:\\scratch\\default.stl", 2, new string[] { "*.stl", "*.obj" }, "mesh files", 0);
 
@@ -555,7 +555,10 @@ namespace f3
         }
 
 
-
+        private static string stringFromCharUnicode(IntPtr ptr)
+        {
+            return Marshal.PtrToStringUni(ptr);
+        }
 
 
 
