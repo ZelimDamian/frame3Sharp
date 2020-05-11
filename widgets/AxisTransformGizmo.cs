@@ -686,7 +686,7 @@ namespace f3
         }
         public virtual void UpdateHover(Ray3f ray, UIRayHit hit)
         {
-            if (hoverWidget != null)
+            if (hoverWidget != null && hoverWidget.RootGameObject != null && !hoverWidget.RootGameObject.IsDestroyed)
                 EndHover(ray);
             if (Widgets.ContainsKey(hit.hitGO)) {
                 hoverWidget = Widgets[hit.hitGO];
@@ -695,7 +695,7 @@ namespace f3
         }
         public virtual void EndHover(Ray3f ray)
         {
-            if (hoverWidget != null) {
+            if (hoverWidget != null && hoverWidget.RootGameObject != null && !hoverWidget.RootGameObject.IsDestroyed) {
                 MaterialUtil.SetMaterial(hoverWidget.RootGameObject, hoverWidget.StandardMaterial);
                 hoverWidget = null;
             }
