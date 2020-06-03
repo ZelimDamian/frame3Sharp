@@ -157,6 +157,7 @@ namespace f3
 
         public float ScaleSpeed = 1.0f;
         public float TranslateSpeed = 1.0f;
+        public float RotateSpeed = 1.0f;
         public bool DynamicVisibilityFiltering = true;
         public bool EnableRotationSnapping = true;
         public float RotationSnapStepSizeDeg = 5.0f;
@@ -399,7 +400,7 @@ namespace f3
                 case AxisGizmoFlags.AxisRotateZ:
                 {
                     go = AppendMeshGO(name, Factory.MakeGeometry(widgetType), useMaterial, RootGameObject, true);
-                    widget = new AxisTrackballRotationWidget(nAxis) {
+                    widget = new AxisTrackballRotationWidget(nAxis, RotateSpeed) {
                         RootGameObject = go, StandardMaterial = useMaterial, HoverMaterial = useHoverMaterial,
                     };
                     break;

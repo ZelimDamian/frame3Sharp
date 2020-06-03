@@ -15,10 +15,12 @@ namespace f3
     public class AxisTrackballRotationWidget : Standard3DTransformWidget
     {
         private readonly int nRotationAxis;
+        private readonly float rotateSpeed;
 
-        public AxisTrackballRotationWidget(int nFrameAxis)
+		public AxisTrackballRotationWidget(int nFrameAxis, float rotateSpeed = 1)
 		{
 			nRotationAxis = nFrameAxis;
+			this.rotateSpeed = rotateSpeed;
 		}
 
 	    private Frame3f rotateFrameW;
@@ -42,7 +44,7 @@ namespace f3
             return true;
 		}
         
-        private static Quaternionf GetCurrentRotation(Vector3f startIntersectionPointW, Vector3f intersectionPointW,
+        private Quaternionf GetCurrentRotation(Vector3f startIntersectionPointW, Vector3f intersectionPointW,
             Vector3f originW, Vector3f aroundW)
         {
             var radiusVectorOld = startIntersectionPointW - originW;
@@ -50,8 +52,12 @@ namespace f3
             
             Debug.DrawLine(originW, startIntersectionPointW, Colorf.Blue);
             Debug.DrawLine(originW, intersectionPointW, Colorf.Red);
-            
-            return Quaternionf.FromToConstrained(radiusVectorOld, radiusVector, aroundW);
+
+            if (rotateSpeed == 1)
+                return Quaternionf.FromToConstrained(radiusVectorOld, radiusVector, aroundW);
+
+            Vector3f radiusVectorDiff = radiusVector - radiusVectorOld;
+            return Quaternionf.FromToConstrained(radiusVectorOld, radiusVectorOld + rotateSpeed * radiusVectorDiff, aroundW);
         }
 
 		public override bool UpdateCapture(ITransformable target, Ray3f worldRay)
@@ -80,7 +86,7 @@ namespace f3
 
         private static readonly double VisibilityThresh = Math.Cos(85 * MathUtil.Deg2Rad);
 
-	    public override bool CheckVisibility(ref Frame3f curFrameW, ref Vector3d eyePosW)
+        public override bool CheckVisibility(ref Frame3f curFrameW, ref Vector3d eyePosW)
         {
             Vector3d axis = curFrameW.GetAxis(nRotationAxis);
             var eyevec = (eyePosW - curFrameW.Origin).Normalized;
