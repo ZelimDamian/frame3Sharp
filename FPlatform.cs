@@ -330,7 +330,7 @@ namespace f3
             if (p == IntPtr.Zero)
                 return null;
             
-            string s = stringFromCharUnicode(p);
+            string s = stringFromCharArray(p);
             return s;
 #else
             // [TODO] implement
@@ -361,7 +361,7 @@ namespace f3
             if (p == IntPtr.Zero)
                 return null;
 
-            string s = stringFromCharUnicode(p);
+            string s = stringFromCharArray(p);
             return s;
 #else
             // [TODO] implement
@@ -405,7 +405,7 @@ namespace f3
                     return;
                 }
 
-                string s = stringFromCharUnicode(p);
+                string s = stringFromCharArray(p);
                 ThreadMailbox.PostToMainThread(() => {
                     OnSelectedF(s);
                 });
@@ -455,7 +455,7 @@ namespace f3
             if (p == IntPtr.Zero)
                 return null;
 
-            string s = stringFromCharUnicode(p);
+            string s = stringFromCharArray(p);
             return s;
 #else
             // [TODO] implement
@@ -500,7 +500,7 @@ namespace f3
                     return;
                 }
 
-                string s = stringFromCharUnicode(p);
+                string s = stringFromCharArray(p);
                 ThreadMailbox.PostToMainThread(() => {
                     OnSelectedF(s);
                 });
@@ -527,26 +527,37 @@ namespace f3
         [DllImport("user32.dll", EntryPoint = "FindWindow")]
         public static extern System.IntPtr FindWindow(System.String className, System.String windowName);
 #endif
-#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_EDITOR)
-        [DllImport("tinyfiledialogs", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr tinyfd_openFileDialog(string aTitle, string aDefaultPathAndFile, int aNumOfFilterPatterns, string[] aFilterPatterns, string aSingleFilterDescription, int aAllowMultipleSelects);
-        //IntPtr p = tinyfd_openFileDialog("select a mesh file", "c:\\scratch\\", 2, new string[] { "*.stl", "*.obj" }, "mesh files", 0);
+#if (UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN)
+        [DllImport("tinyfiledialogs", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr tinyfd_openFileDialog(string aTitle, string aDefaultPathAndFile, int aNumOfFilterPatterns, string[] aFilterPatterns, string aSingleFilterDescription, int aAllowMultipleSelects);
 
         [DllImport("tinyfiledialogs", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr tinyfd_saveFileDialog(string aTitle, string aDefaultPathAndFile, int aNumOfFilterPatterns, string[] aFilterPatterns, string aSingleFilterDescription);
+        private static extern IntPtr tinyfd_saveFileDialog(string aTitle, string aDefaultPathAndFile, int aNumOfFilterPatterns, string[] aFilterPatterns, string aSingleFilterDescription);
         //IntPtr p = tinyfd_openFileDialog("select a mesh file", "c:\\scratch\\default.stl", 2, new string[] { "*.stl", "*.obj" }, "mesh files", 0);
 
         [DllImport("tinyfiledialogs", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr tinyfd_selectFolderDialog(string aTitle, string aDefaultPathAndFile);
-        
-#endif
+        private static extern IntPtr tinyfd_selectFolderDialog(string aTitle, string aDefaultPathAndFile);
 
-        private static string stringFromCharUnicode(IntPtr ptr)
+        private static string stringFromCharArray(IntPtr ptr)
+        {
+            return Marshal.PtrToStringUni(ptr);
+        }
+#else 
+        [DllImport("tinyfiledialogs", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr tinyfd_openFileDialog(string aTitle, string aDefaultPathAndFile, int aNumOfFilterPatterns, string[] aFilterPatterns, string aSingleFilterDescription, int aAllowMultipleSelects);
+
+        [DllImport("tinyfiledialogs", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr tinyfd_saveFileDialog(string aTitle, string aDefaultPathAndFile, int aNumOfFilterPatterns, string[] aFilterPatterns, string aSingleFilterDescription);
+        //IntPtr p = tinyfd_openFileDialog("select a mesh file", "c:\\scratch\\default.stl", 2, new string[] { "*.stl", "*.obj" }, "mesh files", 0);
+
+        [DllImport("tinyfiledialogs", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr tinyfd_selectFolderDialog(string aTitle, string aDefaultPathAndFile);
+
+        private static string stringFromCharArray(IntPtr ptr)
         {
             return Marshal.PtrToStringAnsi(ptr);
         }
-
-
+#endif
 
         /*
          * Preferences API wrapper
