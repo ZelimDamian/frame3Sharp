@@ -714,6 +714,7 @@ namespace f3
     public class DefaultAxisGizmoWidgetFactory : IAxisGizmoWidgetFactory
     {
         public float Alpha = 0.5f;
+        public Colorf DefaultColor = new Colorf(35, 46, 51);
         public int OverrideRenderQueue = -1;
 
         public virtual bool Supports(AxisGizmoFlags widget) {
@@ -734,7 +735,7 @@ namespace f3
                 case AxisGizmoFlags.AxisScaleX:
                 case AxisGizmoFlags.PlaneTranslateX:
                     if (XMaterial == null) {
-                        XMaterial = MaterialUtil.CreateTransparentMaterial(Colorf.VideoRed, Alpha);
+                        XMaterial = MaterialUtil.CreateTransparentMaterial(DefaultColor, Alpha);
                         if (OverrideRenderQueue != -1)
                             XMaterial.renderQueue = OverrideRenderQueue;
                     }
@@ -745,7 +746,7 @@ namespace f3
                 case AxisGizmoFlags.AxisScaleY:
                 case AxisGizmoFlags.PlaneTranslateY:
                     if (YMaterial == null) {
-                        YMaterial = MaterialUtil.CreateTransparentMaterial(Colorf.VideoGreen, Alpha);
+                        YMaterial = MaterialUtil.CreateTransparentMaterial(DefaultColor, Alpha);
                         if (OverrideRenderQueue != -1)
                             YMaterial.renderQueue = OverrideRenderQueue;
                     }
@@ -756,7 +757,7 @@ namespace f3
                 case AxisGizmoFlags.AxisScaleZ:
                 case AxisGizmoFlags.PlaneTranslateZ:
                     if (ZMaterial == null) { 
-                        ZMaterial = MaterialUtil.CreateTransparentMaterial(Colorf.VideoBlue, Alpha);
+                        ZMaterial = MaterialUtil.CreateTransparentMaterial(DefaultColor, Alpha);
                         if (OverrideRenderQueue != -1)
                             ZMaterial.renderQueue = OverrideRenderQueue;
                     }
@@ -787,7 +788,7 @@ namespace f3
                 case AxisGizmoFlags.AxisScaleX:
                 case AxisGizmoFlags.PlaneTranslateX:
                     if (XHover == null) {
-                        XHover = MaterialUtil.CreateTransparentMaterial(Colorf.VideoRed);
+                        XHover = MaterialUtil.CreateTransparentMaterial(DefaultColor);
                         if (OverrideRenderQueue != -1)
                             XHover.renderQueue = OverrideRenderQueue;
                     }
@@ -798,7 +799,7 @@ namespace f3
                 case AxisGizmoFlags.AxisScaleY:
                 case AxisGizmoFlags.PlaneTranslateY:
                     if (YHover == null) {
-                        YHover = MaterialUtil.CreateTransparentMaterial(Colorf.VideoGreen);
+                        YHover = MaterialUtil.CreateTransparentMaterial(DefaultColor);
                         if (OverrideRenderQueue != -1)
                             YHover.renderQueue = OverrideRenderQueue;
                     }
@@ -809,7 +810,7 @@ namespace f3
                 case AxisGizmoFlags.AxisScaleZ:
                 case AxisGizmoFlags.PlaneTranslateZ:
                     if (ZHover == null) {
-                        ZHover = MaterialUtil.CreateTransparentMaterial(Colorf.VideoBlue);
+                        ZHover = MaterialUtil.CreateTransparentMaterial(DefaultColor);
                         if (OverrideRenderQueue != -1)
                             ZHover.renderQueue = OverrideRenderQueue;
                     }
