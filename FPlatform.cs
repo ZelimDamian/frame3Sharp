@@ -313,7 +313,7 @@ namespace f3
         {
             ShowingExternalPopup = true;
 
-#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_EDITOR)
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_STANDALONE_LINUX)
             // tinyfd changes CWD (?), and this makes Unity unhappy
             string curDirectory = Directory.GetCurrentDirectory();
 
@@ -345,7 +345,7 @@ namespace f3
         {
             ShowingExternalPopup = true;
 
-#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_EDITOR)
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_STANDALONE_LINUX)
             // tinyfd changes CWD (?), and this makes Unity unhappy
             string curDirectory = Directory.GetCurrentDirectory();
 
@@ -383,7 +383,7 @@ namespace f3
         static public void GetOpenFileName_Async(string sDialogTitle, string sInitialPathAndFile,
                 string[] filterPatterns, string sPatternDesc, Action<string> OnSelectedF, Action OnCanceledF = null )
         {
-#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX)
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_STANDALONE_LINUX)
 
             ThreadPool.QueueUserWorkItem(delegate {
 
@@ -438,7 +438,7 @@ namespace f3
         {
             ShowingExternalPopup = true;
 
-#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_EDITOR)
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_STANDALONE_LINUX)
             // tinyfd changes CWD (?), and this makes Unity unhappy
             string curDirectory = Directory.GetCurrentDirectory();
 
@@ -478,7 +478,7 @@ namespace f3
         static public void GetSaveFileName_Async(string sDialogTitle, string sInitialPathAndFile,
                 string[] filterPatterns, string sPatternDesc, Action<string> OnSelectedF, Action OnCanceledF = null)
         {
-#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX)
+#if (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_STANDALONE_LINUX)
 
             ThreadPool.QueueUserWorkItem(delegate {
 
