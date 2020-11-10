@@ -203,7 +203,7 @@ namespace f3
             // TODO maybe wrapper class should have Begin/Update/End capture functions, then we do not need BeginTransformation/EndTransformation ?
             if (Widgets.ContainsKey(e.hit.hitGO)) {
                 Standard3DWidget w = Widgets[e.hit.hitGO];
-                if (w.BeginCapture(Targets[0], e.ray, e.hit.toUIHit())) {
+                if (w.BeginCapture(targetWrapper, e.ray, e.hit.toUIHit())) {
                     MaterialUtil.SetMaterial(w.RootGameObject, w.HoverMaterial);
                     targetWrapper.BeginTransformation();
                     activeWidget = w;
